@@ -1,0 +1,9 @@
+[submodule "third_party/diffusion_policy"]
+	path = third_party/diffusion_policy
+	url = https://github.com/real-stanford/diffusion_policy.git
+[submodule "third_party/policyconsensus"]
+	path = third_party/policyconsensus
+	url = https://github.com/policyconsensus/policyconsensus.git
+[submodule "third_party/reactive_diffusion_policy"]
+	path = third_party/reactive_diffusion_policy
+	url = https://github.com/xiaoxiaoxh/reactive_diffusion_policy.git
