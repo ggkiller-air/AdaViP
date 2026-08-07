@@ -7,3 +7,9 @@
 [submodule "third_party/reactive_diffusion_policy"]
 	path = third_party/reactive_diffusion_policy
 	url = https://github.com/xiaoxiaoxh/reactive_diffusion_policy.git
+[submodule "third_party/manifeel"]
+	path = third_party/manifeel
+	url = https://github.com/purdue-mars/manifeel.git
+[submodule "third_party/manifeel-isaacgymenvs"]
+	path = third_party/manifeel-isaacgymenvs
+	url = https://github.com/purdue-mars/manifeel-isaacgymenvs.git

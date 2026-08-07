@@ -16,3 +16,26 @@ env/
 .idea/
 .vscode/
 .DS_Store
+
+# ManiFeel / Isaac Gym generated or licensed artifacts (never commit)
+data/
+datasets/
+outputs/
+logs/
+checkpoints/
+wandb/
+videos/
+*.ckpt
+*.pth
+*.sif
+*.img
+*.simg
+*.mp4
+*.avi
+*.rrd
+IsaacGym_Preview_TacSL_Package/
+IsaacGym_Preview_TacSL_Package.tar.gz
+manifeel.sif
+*.tar.gz.parts/
+*.tar.gz.parts_*/
+docs/manifeel_logs/

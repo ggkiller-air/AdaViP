@@ -1,0 +1,24 @@
+# Parameters for the official ManiFeel Diffusion Policy smoke run.
+# The shell scripts pass these as Hydra overrides to upstream train.py/eval.py.
+# Keep large artifacts outside Git.
+
+task: vision_wrist
+dataset_name: usb_quan_Aug05
+dataset_path: /data/wangzihao/datasets/manifeel/usb_quan_Aug05
+isaacgym_config: isaacgym_config_usb.yaml
+device: cuda:0
+seed: 42
+num_demos: 1
+num_epochs: 2
+max_train_steps: 2
+max_val_steps: 1
+rollout_every: 100000
+checkpoint_every: 1
+logging_mode: offline
+
+# Official training entrypoint:
+#   third_party/manifeel/train.py
+# Official evaluation entrypoint:
+#   third_party/manifeel/eval.py
+# The upstream eval.py currently composes cfg_name without CLI overrides;
+# see docs/manifeel_setup.md before using a checkpoint from a non-default task.
