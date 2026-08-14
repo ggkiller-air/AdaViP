@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "methods": {
+    "vtdp": {
+      "status": "upstream_reference",
+      "description": "Visuotactile Diffusion Policy baseline from the pinned RDP repository"
+    },
+    "vtdp_adavip": {
+      "status": "pending_adavip_adapter",
+      "description": "VT-DP with AdaViP observation encoder"
+    },
+    "rdp": {
+      "status": "upstream_reference",
+      "description": "Two-stage upstream Asymmetric Tokenizer and Latent Diffusion Policy"
+    },
+    "rdp_adavip": {
+      "status": "pending_adavip_adapter",
+      "description": "RDP with AdaViP in the LDP perception path"
+    }
+  },
+  "tasks": {
+    "peeling": {
+      "protocol_status": "upstream_reference",
+      "dp_hz": 12,
+      "rdp_hz": 24,
+      "dp_task_config": "real_peel_image_gelsight_emb_dp_absolute_12fps",
+      "rdp_at_task_config": "real_peel_image_gelsight_emb_at_24fps",
+      "rdp_ldp_task_config": "real_peel_image_gelsight_emb_ldp_24fps",
+      "rdp_at_profile": "at_peel",
+      "formal_blocker": "Add the fixed third-person RGB view and verify the collected Table 2 Zarr schema."
+    },
+    "wiping": {
+      "protocol_status": "upstream_reference",
+      "dp_hz": 12,
+      "rdp_hz": 24,
+      "dp_task_config": "real_wipe_image_gelsight_emb_dp_absolute_12fps",
+      "rdp_at_task_config": "real_wipe_image_gelsight_emb_at_24fps",
+      "rdp_ldp_task_config": "real_wipe_image_gelsight_emb_ldp_24fps",
+      "rdp_at_profile": "at_wipe_lift",
+      "formal_blocker": "Add the fixed third-person RGB view and verify the collected Table 2 Zarr schema."
+    },
+    "occluded_picking": {
+      "protocol_status": "pending_task_config",
+      "formal_blocker": "Create DP, AT, and LDP configs from the collected Zarr observation/action schema."
+    },
+    "threaded_assembly": {
+      "protocol_status": "pending_task_config",
+      "formal_blocker": "Create DP, AT, and LDP configs from the collected Zarr observation/action schema."
+    },
+    "puzzle_insertion": {
+      "protocol_status": "pending_task_config",
+      "formal_blocker": "Create DP, AT, and LDP configs from the collected Zarr observation/action schema."
+    }
+  }
+}

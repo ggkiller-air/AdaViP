@@ -10,6 +10,9 @@ print_manifeel_context
 CHECKPOINT="${1:-${MANIFEEL_OUTPUT_ROOT}/dp_usb_vision_wrist_smoke/checkpoints/latest_epoch0.ckpt}"
 OUTPUT_DIR="${2:-${MANIFEEL_OUTPUT_ROOT}/dp_usb_vision_wrist_smoke/eval}"
 CFG_NAME="${MANIFEEL_EVAL_CFG_NAME:-}"
+N_TEST="${MANIFEEL_EVAL_N_TEST:-${MANIFEEL_N_TEST:-}}"
+N_TEST_VIS="${MANIFEEL_EVAL_N_TEST_VIS:-${MANIFEEL_N_TEST_VIS:-}}"
+MAX_STEPS="${MANIFEEL_EVAL_MAX_STEPS:-${MANIFEEL_MAX_STEPS:-}}"
 
 if [[ ! -f "${CHECKPOINT}" ]]; then
     echo "Checkpoint missing: ${CHECKPOINT}" >&2
@@ -32,5 +35,14 @@ EVAL_ARGS=(
 )
 if [[ -n "${CFG_NAME}" ]]; then
     EVAL_ARGS+=(--cfg_name "${CFG_NAME}")
+fi
+if [[ -n "${N_TEST}" ]]; then
+    EVAL_ARGS+=(--n-test "${N_TEST}")
+fi
+if [[ -n "${N_TEST_VIS}" ]]; then
+    EVAL_ARGS+=(--n-test-vis "${N_TEST_VIS}")
+fi
+if [[ -n "${MAX_STEPS}" ]]; then
+    EVAL_ARGS+=(--max-steps "${MAX_STEPS}")
 fi
 exec "${MANIFEEL_PYTHON}" eval.py "${EVAL_ARGS[@]}"

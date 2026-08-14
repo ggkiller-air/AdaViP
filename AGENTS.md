@@ -25,6 +25,22 @@
 
 ## Environment, Network & Communication
 
+- Use interactive GPU allocations for short, bounded preflight debugging
+  before long training runs. Verify training parameters, batch size, CPU
+  allocation, DataLoader workers, GPU utilization, and checkpoint/log behavior
+  during the preflight run.
+- Submit long-running training and formal evaluation jobs through `sbatch`.
+  Before submission, use the interactive-GPU preflight results to request
+  enough CPUs, set a sufficiently large batch size when memory allows, and
+  increase DataLoader workers to keep the GPU utilized. The cluster has ample
+  CPU capacity, so avoid under-requesting CPUs for GPU jobs.
+- Before starting GPU-dependent work, inspect the current allocation and GPU
+  processes, report the GPU model, memory, utilization, and relevant running
+  jobs to the user, and wait for confirmation before launching training or
+  evaluation.
+- A training process already running only to keep an interactive allocation
+  alive may be terminated when the GPU is needed for the requested work; note
+  the termination in the development log.
 - Install persistent environments, caches, and artifacts under
   `/public/home/wangzihao/` (or the approved `/data/wangzihao/` data root), not
   `/tmp/`, which may be cleaned automatically.
@@ -36,6 +52,15 @@
   ask the user to request an interactive GPU or submit an `sbatch` job.
 - Keep answers structured, evidence-based, and restrained. Recheck assumptions,
   state uncertainty, and request evidence when needed.
+
+## Development Logs
+
+- Read the relevant entries under `docs/logs/` before starting work, then record
+  new development updates there instead of adding progress history to this
+  file.
+- Keep logs concise: record verified milestones, experiment commands and
+  outcomes needed for reproducibility, and high-value pitfalls. Avoid routine
+  narration and overly granular activity logs.
 
 ## Coding Style & Naming Conventions
 

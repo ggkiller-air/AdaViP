@@ -24,6 +24,8 @@ TORCH_VERSION="${MANIFEEL_TORCH_VERSION:-2.4.1}"
 TORCHVISION_VERSION="${MANIFEEL_TORCHVISION_VERSION:-0.19.1}"
 TORCH_INDEX_URL="${MANIFEEL_TORCH_INDEX_URL:-https://mirrors.aliyun.com/pytorch-wheels/cu121}"
 TORCH_WHEEL="${MANIFEEL_TORCH_WHEEL:-/public/home/wangzihao/.cache/manifeel-pip/wheels/torch-2.4.1+cu121-cp38-cp38-linux_x86_64.whl}"
+TORCHVISION_WHEEL="${MANIFEEL_TORCHVISION_WHEEL:-/public/home/wangzihao/.cache/manifeel-pip/wheels/torchvision-0.19.1+cu121-cp38-cp38-linux_x86_64.whl}"
+TORCHVISION_URL="${MANIFEEL_TORCHVISION_URL:-https://download.pytorch.org/whl/cu121/torchvision-0.19.1%2Bcu121-cp38-cp38-linux_x86_64.whl}"
 PIP_INDEX="${MANIFEEL_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}"
 CONDA_CHANNEL="${MANIFEEL_CONDA_CHANNEL:-conda-forge}"
 
@@ -74,9 +76,18 @@ else
         --index-url "${TORCH_INDEX_URL}" \
         "torch==${TORCH_VERSION}+cu121"
 fi
-python -m pip install \
+# Some PyTorch mirrors intermittently omit the Python 3.8 torchvision wheel.
+# Install its small runtime dependencies first so the exact upstream wheel can
+# be used without resolving the rest of the environment against that index.
+python -m pip install --index-url "${PIP_INDEX}" "numpy==1.23.3" "pillow==10.4.0"
+if [[ -f "${TORCHVISION_WHEEL}" ]]; then
+    python -m pip install --no-deps "${TORCHVISION_WHEEL}"
+elif ! python -m pip install \
     --index-url "${TORCH_INDEX_URL}" \
-    "torchvision==${TORCHVISION_VERSION}+cu121"
+    "torchvision==${TORCHVISION_VERSION}+cu121"; then
+    echo "[manifeel] torchvision mirror lookup failed; using exact upstream wheel"
+    python -m pip install --no-deps "${TORCHVISION_URL}"
+fi
 
 echo "[manifeel] installing public ManiFeel dependencies"
 # torchcfm depends on POT but newer POT sdists can fail Cython builds on this

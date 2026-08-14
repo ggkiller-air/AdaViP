@@ -1,0 +1,31 @@
+name: dp_sanity_no_tactile_30hz
+dataset_path: /data/wangzihao/datasets/real_world/dp_sanity_no_tactile/processed_30hz
+
+shape_meta: &shape_meta
+  obs:
+    cam_high:
+      shape: [3, 480, 640]
+      type: rgb
+    cam_left_wrist:
+      shape: [3, 480, 640]
+      type: rgb
+    cam_right_wrist:
+      shape: [3, 480, 640]
+      type: rgb
+    qpos:
+      shape: [14]
+      type: low_dim
+  action:
+    shape: [14]
+
+dataset:
+  _target_: adavip.real_world.offline_image_dataset.OfflineImageDataset
+  shape_meta: *shape_meta
+  dataset_path: ${task.dataset_path}
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  n_obs_steps: ${n_obs_steps}
+  seed: ${training.seed}
+  val_ratio: 0.0
+  max_train_episodes: 1

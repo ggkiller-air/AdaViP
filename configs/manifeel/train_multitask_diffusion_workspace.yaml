@@ -1,0 +1,237 @@
+# ManiFeel 9-task DP protocol: front + wrist + state + frozen language task embedding.
+
+defaults:
+  - _self_
+
+name: train_multitask_diffusion_unet_image
+_target_: manifeel.workspace.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspace
+
+task_name: ${task.name}
+shape_meta: ${task.shape_meta}
+exp_name: table1_dp_b416_w12_ep300_seed42
+
+dataset_root: /data/wangzihao/datasets/manifeel
+task_embedding_path: /data/wangzihao/outputs/manifeel/task_embeddings/clip_vit_b32_9task.npz
+task_embedding_dim: 512
+
+n_demo: ${task.dataset.max_train_episodes}
+horizon: 16
+n_obs_steps: 2
+n_action_steps: 8
+n_latency_steps: 0
+dataset_obs_steps: ${n_obs_steps}
+past_action_visible: false
+keypoint_visible_rate: 1.0
+obs_as_global_cond: true
+
+task:
+  name: manifeel_multitask_front_wrist
+  shape_meta:
+    obs:
+      front:
+        shape: [3, 256, 256]
+        type: rgb
+      wrist:
+        shape: [3, 256, 256]
+        type: rgb
+      state:
+        shape: [7]
+        type: low_dim
+      task_embedding:
+        shape:
+          - ${task_embedding_dim}
+        type: low_dim
+    action:
+      shape: [7]
+  task_specs:
+    - task_id: peg_insertion
+      text: peg insertion
+      dataset: pih_quan_June06
+      isaacgym_cfg_name: isaacgym_config.yaml
+      action_dim: 6
+    - task_id: usb_insertion
+      text: USB insertion
+      dataset: usb_quan_Aug05
+      isaacgym_cfg_name: isaacgym_config_usb.yaml
+      action_dim: 6
+    - task_id: power_plug_insertion
+      text: power plug insertion
+      dataset: plug_quan_Aug02
+      isaacgym_cfg_name: isaacgym_config_power_plug.yaml
+      action_dim: 6
+    - task_id: gear_assembly
+      text: gear assembly
+      dataset: gear_quan_Sep15
+      isaacgym_cfg_name: isaacgym_config_gear.yaml
+      action_dim: 6
+    - task_id: nut_bolt_assembly
+      text: nut and bolt assembly
+      dataset: nutbolt_quan_July1
+      isaacgym_cfg_name: isaacgym_config_nut.yaml
+      action_dim: 7
+    - task_id: bulb_installation
+      text: bulb installation
+      dataset: bulb_quan_Sep19
+      isaacgym_cfg_name: isaacgym_config_bulb.yaml
+      action_dim: 7
+    - task_id: peg_reorientation
+      text: peg reorientation
+      dataset: blindinsert_quan_Aug15
+      isaacgym_cfg_name: isaacgym_config_peg_reorientation.yaml
+      action_dim: 6
+    - task_id: object_search
+      text: object search
+      dataset: explore_quan_June17
+      isaacgym_cfg_name: isaacgym_config_object_search.yaml
+      action_dim: 7
+    - task_id: ball_sorting
+      text: ball sorting
+      dataset: sorting_quan_Aug8
+      isaacgym_cfg_name: isaacgym_config_ball_sorting.yaml
+      action_dim: 7
+  env_runner:
+    _target_: adavip.manifeel.multitask_runner.MultiTaskManiFeelRunner
+    shape_meta: ${task.shape_meta}
+    task_embedding_path: ${task_embedding_path}
+    task_specs: ${task.task_specs}
+    n_test: 50
+    n_test_vis: 2
+    test_start_seed: 100000
+    max_steps: 500
+    n_obs_steps: ${n_obs_steps}
+    n_action_steps: ${n_action_steps}
+    fps: 10
+    past_action: ${past_action_visible}
+  dataset:
+    _target_: adavip.manifeel.multitask_dataset.MultiTaskManiFeelDataset
+    shape_meta: ${task.shape_meta}
+    dataset_root: ${dataset_root}
+    task_embedding_path: ${task_embedding_path}
+    task_specs: ${task.task_specs}
+    horizon: ${horizon}
+    pad_before: ${eval:'${n_obs_steps}-1'}
+    pad_after: ${eval:'${n_action_steps}-1'}
+    n_obs_steps: ${n_obs_steps}
+    seed: ${training.seed}
+    val_ratio: 0.02
+    max_train_episodes: 50
+
+policy:
+  _target_: adavip.manifeel.multitask_policy.MaskedDiffusionUnetImagePolicy
+  shape_meta: ${shape_meta}
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    variance_type: fixed_small
+    clip_sample: true
+    prediction_type: epsilon
+  obs_encoder:
+    _target_: diffusion_policy.model.vision.multi_image_obs_encoder.MultiImageObsEncoder
+    shape_meta: ${shape_meta}
+    rgb_model:
+      _target_: diffusion_policy.model.vision.model_getter.get_resnet
+      name: resnet18
+      weights: null
+    resize_shape: null
+    crop_shape: null
+    random_crop: true
+    use_group_norm: true
+    share_rgb_model: false
+    imagenet_norm: true
+  horizon: ${horizon}
+  n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
+  n_obs_steps: ${n_obs_steps}
+  num_inference_steps: 100
+  obs_as_global_cond: ${obs_as_global_cond}
+  diffusion_step_embed_dim: 128
+  down_dims: [512, 1024, 2048]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+
+ema:
+  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
+  update_after_step: 0
+  inv_gamma: 1.0
+  power: 0.75
+  min_value: 0.0
+  max_value: 0.9999
+
+dataloader:
+  batch_size: 416
+  num_workers: 12
+  shuffle: true
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 1
+
+val_dataloader:
+  batch_size: 128
+  num_workers: 2
+  shuffle: false
+  pin_memory: true
+  persistent_workers: false
+  prefetch_factor: 1
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 8.0e-5
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-6
+
+training:
+  device: cuda:0
+  seed: 42
+  debug: false
+  resume: true
+  lr_scheduler: cosine
+  lr_warmup_steps: 500
+  num_epochs: 300
+  gradient_accumulate_every: 1
+  use_ema: true
+  # Isaac Gym cannot reliably rebuild all nine task simulators in one process.
+  # Use eval_multitask_dp.sh, which isolates each task in its own process.
+  rollout_every: 0
+  checkpoint_every: 30
+  val_every: 30
+  sample_every: 30
+  max_train_steps: null
+  max_val_steps: null
+  tqdm_interval_sec: 1.0
+  freeze_encoder: false
+
+logging:
+  project: manifeel_multitask
+  resume: allow
+  mode: online
+  name: ${exp_name}
+  tags: ["${name}", "${task_name}", "${exp_name}"]
+  id: ${exp_name}
+  group: null
+
+checkpoint:
+  topk:
+    monitor_key: train_loss
+    mode: min
+    k: 5
+    format_str: 'epoch={epoch:04d}-train_loss={train_loss:.3f}.ckpt'
+  save_last_ckpt: true
+  save_best_val_ckpt: true
+  save_last_snapshot: false
+
+multi_run:
+  run_dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+  wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+  sweep:
+    dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+    subdir: ${hydra.job.num}
