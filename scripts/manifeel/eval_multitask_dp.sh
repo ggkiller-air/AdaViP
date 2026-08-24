@@ -24,6 +24,8 @@ if [[ -e "${OUTPUT_DIR}" ]]; then
     exit 2
 fi
 
+export MANIFEEL_EVAL_RETAIN_OUTCOME_VIDEOS="${MANIFEEL_EVAL_RETAIN_OUTCOME_VIDEOS:-1}"
+
 exec "${MANIFEEL_PYTHON}" "${MANIFEEL_REPO_ROOT}/scripts/manifeel/eval_multitask_checkpoint.py" \
     --checkpoint "${CHECKPOINT}" \
     --output_dir "${OUTPUT_DIR}" \

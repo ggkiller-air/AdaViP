@@ -79,7 +79,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task-config", default=DEFAULT_TASK_CONFIG)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
-        "--wandb-mode", choices=("online", "offline", "disabled"), default="online"
+        "--wandb-mode", choices=("online", "offline", "disabled"), default="offline"
     )
     parser.add_argument("--rdp-root", type=Path, default=DEFAULT_RDP_ROOT)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))

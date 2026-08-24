@@ -147,7 +147,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stage", choices=("all", "at", "ldp"), default="all")
     parser.add_argument("--at-checkpoint", type=Path)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--wandb-mode", choices=("online", "offline", "disabled"), default="online")
+    parser.add_argument("--wandb-mode", choices=("online", "offline", "disabled"), default="offline")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--rdp-root", type=Path, default=DEFAULT_RDP_ROOT)

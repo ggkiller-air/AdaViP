@@ -21,6 +21,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--access", choices=("cpu", "gpu"), default="gpu")
     parser.add_argument("--image-type", choices=("color", "depth"), default="color")
     parser.add_argument("--num-envs", type=int, default=1)
+    parser.add_argument("--frames", type=int, default=1)
+    parser.add_argument("--compute-device-id", type=int, default=0)
+    parser.add_argument("--graphics-device-id", type=int, default=0)
     parser.add_argument("--acquire-after-prepare", action="store_true")
     parser.add_argument("--attach-camera", action="store_true")
     return parser.parse_args()
@@ -58,6 +61,8 @@ def main() -> None:
     args = parse_args()
     if args.num_envs < 1:
         raise ValueError("--num-envs must be positive")
+    if args.frames < 1:
+        raise ValueError("--frames must be positive")
 
     image_type = image_type_from_name(args.image_type)
     gym = gymapi.acquire_gym()
@@ -66,7 +71,12 @@ def main() -> None:
     sim_params.use_gpu_pipeline = True
 
     log("create_sim_begin")
-    sim = gym.create_sim(0, 0, gymapi.SIM_PHYSX, sim_params)
+    sim = gym.create_sim(
+        args.compute_device_id,
+        args.graphics_device_id,
+        gymapi.SIM_PHYSX,
+        sim_params,
+    )
     if sim is None:
         raise RuntimeError("gym.create_sim returned None")
     log("create_sim_end")
@@ -114,22 +124,25 @@ def main() -> None:
     if args.access == "gpu" and args.acquire_after_prepare:
         tensors = acquire_gpu_tensors(gym, sim, cameras, image_type)
 
-    log("simulate_begin")
-    gym.simulate(sim)
-    gym.fetch_results(sim, True)
-    gym.step_graphics(sim)
-    gym.render_all_camera_sensors(sim)
-    log("render_end")
+    for frame in range(args.frames):
+        log(f"frame_begin frame={frame}")
+        gym.simulate(sim)
+        gym.fetch_results(sim, True)
+        gym.step_graphics(sim)
+        gym.render_all_camera_sensors(sim)
 
-    if args.access == "gpu":
-        gym.start_access_image_tensors(sim)
-        log(f"gpu_access_end shape={tuple(tensors[0].shape)}")
-        gym.end_access_image_tensors(sim)
-    else:
-        env, camera = cameras[0]
-        log("cpu_access_begin")
-        image = gym.get_camera_image(sim, env, camera, image_type)
-        log(f"cpu_access_end shape={image.shape}")
+        if args.access == "gpu":
+            gym.start_access_image_tensors(sim)
+            try:
+                tensors[0].clone()
+                log(f"gpu_access_end frame={frame} shape={tuple(tensors[0].shape)}")
+            finally:
+                gym.end_access_image_tensors(sim)
+        else:
+            env, camera = cameras[0]
+            log(f"cpu_access_begin frame={frame}")
+            image = gym.get_camera_image(sim, env, camera, image_type)
+            log(f"cpu_access_end frame={frame} shape={image.shape}")
 
     gym.destroy_sim(sim)
     log("diagnostic_complete")

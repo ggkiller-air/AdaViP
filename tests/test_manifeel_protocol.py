@@ -166,7 +166,7 @@ def test_table1_multitask_configs_have_training_defaults() -> None:
         assert "resume: allow" in text
         assert "name: ${exp_name}" in text
         assert "id: ${exp_name}" in text
-        assert "mode: online" in text
+        assert "mode: offline" in text
         assert "save_best_val_ckpt: true" in text
 
 
@@ -300,6 +300,42 @@ def test_masked_flow_matching_loss_ignores_padded_actions() -> None:
         "action_loss_mask": torch.tensor([[[1.0, 0.0], [1.0, 0.0]]]),
     }
     assert torch.isclose(policy.compute_loss(batch), torch.tensor(1.0))
+
+
+def test_masked_flow_matching_sampling_uses_gaussian_prior(monkeypatch) -> None:
+    torch = pytest.importorskip("torch")
+    policy_module = pytest.importorskip("adavip.manifeel.multitask_policy")
+    if policy_module.FMDP is None:
+        pytest.skip("torchcfm is unavailable")
+
+    class ZeroVelocity(torch.nn.Module):
+        def forward(self, sample, timestep, local_cond=None, global_cond=None):
+            return torch.zeros_like(sample)
+
+    expected = torch.tensor(
+        [[[1.0, -1.0], [2.0, -2.0], [3.0, -3.0]]], dtype=torch.float32
+    )
+    calls = []
+
+    def fake_randn(shape, **kwargs):
+        calls.append((shape, kwargs))
+        return expected.clone()
+
+    monkeypatch.setattr(torch, "randn", fake_randn)
+    policy = object.__new__(policy_module.MaskedFMDP)
+    torch.nn.Module.__init__(policy)
+    policy.model = ZeroVelocity()
+    policy.num_inference_steps = 2
+
+    condition_data = torch.zeros_like(expected)
+    sample = policy.conditional_sample(
+        condition_data=condition_data,
+        condition_mask=torch.zeros_like(condition_data, dtype=torch.bool),
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0] == condition_data.shape
+    assert torch.equal(sample, expected)
 
 
 def test_ball_sorting_isaacgym_config_uses_existing_task() -> None:
