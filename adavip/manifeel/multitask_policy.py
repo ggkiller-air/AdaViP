@@ -89,6 +89,43 @@ if FMDP is not None:
     class MaskedFMDP(FMDP):
         """Flow Matching policy that ignores padded action dimensions in the loss."""
 
+        def conditional_sample(
+            self,
+            condition_data,
+            condition_mask,
+            condition_data_pc=None,
+            condition_mask_pc=None,
+            local_cond=None,
+            global_cond=None,
+            generator=None,
+            **kwargs,
+        ):
+            """Integrate the learned flow from the training-time Gaussian prior."""
+
+            del condition_mask, condition_data_pc, condition_mask_pc, kwargs
+            trajectory = torch.randn(
+                condition_data.shape,
+                dtype=condition_data.dtype,
+                device=condition_data.device,
+                generator=generator,
+            )
+            dt = 1.0 / self.num_inference_steps
+            for step in range(self.num_inference_steps):
+                timestep = torch.full(
+                    (condition_data.shape[0],),
+                    step * dt,
+                    dtype=condition_data.dtype,
+                    device=condition_data.device,
+                )
+                velocity = self.model(
+                    trajectory,
+                    timestep,
+                    local_cond=local_cond,
+                    global_cond=global_cond,
+                )
+                trajectory = trajectory + velocity * dt
+            return trajectory
+
         def compute_loss(self, batch):
             assert "valid_mask" not in batch
             nobs = self.normalizer.normalize(batch["obs"])

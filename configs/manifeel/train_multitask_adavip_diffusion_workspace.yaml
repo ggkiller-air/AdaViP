@@ -226,7 +226,7 @@ training:
 logging:
   project: manifeel_multitask
   resume: allow
-  mode: online
+  mode: offline
   name: ${exp_name}
   tags: ["${name}", "${task_name}", "${exp_name}"]
   id: ${exp_name}

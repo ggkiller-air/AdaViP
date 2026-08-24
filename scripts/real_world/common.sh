@@ -5,9 +5,9 @@ REAL_WORLD_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REAL_WORLD_REPO_ROOT="$(cd -- "${REAL_WORLD_SCRIPT_DIR}/../.." && pwd)"
 RDP_ROOT="${REAL_WORLD_REPO_ROOT}/third_party/reactive_diffusion_policy"
 
-RDP_ENV_PREFIX="${RDP_ENV_PREFIX:-/public/home/wangzihao/envs/rdp-baseline-py310}"
+RDP_ENV_PREFIX="${RDP_ENV_PREFIX:-${CONDA_PREFIX:-${REAL_WORLD_REPO_ROOT}/.venv}}"
 RDP_PYTHON="${RDP_PYTHON:-${RDP_ENV_PREFIX}/bin/python}"
-TABLE2_OUTPUT_ROOT="${TABLE2_OUTPUT_ROOT:-/data/wangzihao/outputs/real_world/table2}"
+TABLE2_OUTPUT_ROOT="${TABLE2_OUTPUT_ROOT:-${REAL_WORLD_REPO_ROOT}/outputs/real_world/table2}"
 
 export REAL_WORLD_REPO_ROOT RDP_ROOT RDP_ENV_PREFIX RDP_PYTHON
 export TABLE2_OUTPUT_ROOT PYTHONUNBUFFERED=1

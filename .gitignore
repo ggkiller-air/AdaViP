@@ -20,6 +20,7 @@ env/
 # ManiFeel / Isaac Gym generated or licensed artifacts (never commit)
 data/
 datasets/
+pick_and_place/
 outputs/
 logs/
 checkpoints/
@@ -39,3 +40,10 @@ manifeel.sif
 *.tar.gz.parts/
 *.tar.gz.parts_*/
 docs/manifeel_logs/
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
