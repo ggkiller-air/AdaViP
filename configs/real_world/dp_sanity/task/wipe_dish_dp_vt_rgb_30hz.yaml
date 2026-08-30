@@ -1,0 +1,37 @@
+name: wipe_dish_dp_vt_rgb_30hz
+dataset_path: /data/wangzihao/wipe-dish-rdp-both
+
+shape_meta: &shape_meta
+  obs:
+    cam_high:
+      shape: [3, 240, 320]
+      type: rgb
+    cam_left_wrist:
+      shape: [3, 240, 320]
+      type: rgb
+    cam_right_wrist:
+      shape: [3, 240, 320]
+      type: rgb
+    gelsight_left:
+      shape: [3, 240, 320]
+      type: rgb
+    gelsight_right:
+      shape: [3, 240, 320]
+      type: rgb
+    robot_qpos:
+      shape: [14]
+      type: low_dim
+  action:
+    shape: [14]
+
+dataset:
+  _target_: adavip.real_world.offline_image_dataset.OfflineImageDataset
+  shape_meta: *shape_meta
+  dataset_path: ${task.dataset_path}
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  n_obs_steps: ${n_obs_steps}
+  seed: ${training.seed}
+  val_ratio: 0.20
+  max_train_episodes: null

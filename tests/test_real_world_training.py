@@ -1,10 +1,18 @@
 import importlib.util
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+import zarr
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+RDP_ROOT = REPO_ROOT / "third_party" / "reactive_diffusion_policy"
+if str(RDP_ROOT) not in sys.path:
+    sys.path.insert(0, str(RDP_ROOT))
 LAUNCHER_PATH = REPO_ROOT / "scripts" / "real_world" / "train_table2.py"
 SPEC = importlib.util.spec_from_file_location("train_table2", LAUNCHER_PATH)
 assert SPEC is not None and SPEC.loader is not None
@@ -18,6 +26,14 @@ SANITY_SPEC = importlib.util.spec_from_file_location(
 assert SANITY_SPEC is not None and SANITY_SPEC.loader is not None
 TRAIN_DP_SANITY = importlib.util.module_from_spec(SANITY_SPEC)
 SANITY_SPEC.loader.exec_module(TRAIN_DP_SANITY)
+
+OFFLINE_DATASET_PATH = REPO_ROOT / "adavip" / "real_world" / "offline_image_dataset.py"
+OFFLINE_SPEC = importlib.util.spec_from_file_location(
+    "offline_image_dataset", OFFLINE_DATASET_PATH
+)
+assert OFFLINE_SPEC is not None and OFFLINE_SPEC.loader is not None
+OFFLINE_MODULE = importlib.util.module_from_spec(OFFLINE_SPEC)
+OFFLINE_SPEC.loader.exec_module(OFFLINE_MODULE)
 
 
 class Table2TrainingTest(unittest.TestCase):
@@ -102,6 +118,44 @@ class DpSanityTrainingTest(unittest.TestCase):
         self.assertIn("task=piper_pick_cup_left_30hz", command)
         self.assertIn("task.name=piper_pick_cup_left_seed42", command)
         self.assertIn("logging.project=piper_pick_cup_left", command)
+
+
+class OfflineImageDatasetTest(unittest.TestCase):
+    def test_normalizer_uses_training_episodes_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tmp_path = Path(temporary)
+            self._check_training_only_normalizer(tmp_path)
+
+    def _check_training_only_normalizer(self, tmp_path: Path) -> None:
+        root = zarr.open(str(tmp_path / "replay_buffer.zarr"), mode="w")
+        data = root.create_group("data")
+        meta = root.create_group("meta")
+        # With three episodes and seed 42, episode 0 is the one validation
+        # episode. Its deliberately larger values must not affect fitting.
+        action = np.concatenate(
+            [np.full((3, 2), 100.0), np.full((6, 2), 10.0)], axis=0
+        ).astype(np.float32)
+        qpos = np.concatenate(
+            [np.full((3, 2), 50.0), np.full((6, 2), 5.0)], axis=0
+        ).astype(np.float32)
+        data.array("action", action)
+        data.array("robot_qpos", qpos)
+        meta.array("episode_ends", np.asarray([3, 6, 9], dtype=np.int64))
+        shape_meta = {
+            "obs": {"robot_qpos": {"shape": [2], "type": "low_dim"}},
+            "action": {"shape": [2]},
+        }
+        dataset = OFFLINE_MODULE.OfflineImageDataset(
+            shape_meta=shape_meta,
+            dataset_path=str(tmp_path),
+            horizon=2,
+            n_obs_steps=1,
+            val_ratio=1 / 3,
+            seed=42,
+        )
+        normalizer = dataset.get_normalizer()
+        np.testing.assert_allclose(normalizer["action"].get_input_stats()["max"], 10.0)
+        np.testing.assert_allclose(normalizer["robot_qpos"].get_input_stats()["max"], 5.0)
 
 
 if __name__ == "__main__":

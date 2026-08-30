@@ -58,9 +58,10 @@ class OfflineImageDataset(BaseImageDataset):
             else:
                 raise ValueError(f"Unsupported observation type {obs_type!r} for {key}")
 
-        load_keys = [*self.rgb_keys, *self.lowdim_keys, "action"]
-        replay_buffer = ReplayBuffer.copy_from_path(
-            os.path.join(dataset_path, "replay_buffer.zarr"), keys=load_keys
+        # Keep image arrays on disk and read only sampled windows. Loading all
+        # raw RGB streams into NumPy would consume tens of GB for wipe-dish.
+        replay_buffer = ReplayBuffer.create_from_path(
+            os.path.join(dataset_path, "replay_buffer.zarr"), mode="r"
         )
         val_mask = get_val_mask(
             n_episodes=replay_buffer.n_episodes, val_ratio=val_ratio, seed=seed
@@ -69,6 +70,7 @@ class OfflineImageDataset(BaseImageDataset):
             mask=~val_mask, max_n=max_train_episodes, seed=seed
         )
         self.replay_buffer = replay_buffer
+        self.train_mask = train_mask
         self.sampler = SequenceSampler(
             replay_buffer=replay_buffer,
             sequence_length=horizon,
@@ -94,19 +96,33 @@ class OfflineImageDataset(BaseImageDataset):
             episode_mask=self.val_mask,
         )
         validation.val_mask = ~self.val_mask
+        validation.train_mask = validation.val_mask
         return validation
+
+    def _frames_for_episodes(self, episode_mask: np.ndarray, key: str) -> np.ndarray:
+        """Collect one low-dimensional key from the selected episodes."""
+        ends = np.asarray(self.replay_buffer.episode_ends[:], dtype=np.int64)
+        chunks = []
+        start = 0
+        for episode_index, end in enumerate(ends):
+            if episode_mask[episode_index]:
+                chunks.append(np.asarray(self.replay_buffer[key][start : int(end)]))
+            start = int(end)
+        if not chunks:
+            raise ValueError("Episode mask selects no frames")
+        return np.concatenate(chunks, axis=0)
 
     def get_normalizer(self, **kwargs: Any) -> LinearNormalizer:
         """Fit generic per-dimension limit normalizers for joints and actions."""
         normalizer = LinearNormalizer()
         action_dim = self.shape_meta["action"]["shape"][0]
         normalizer["action"] = SingleFieldLinearNormalizer.create_fit(
-            self.replay_buffer["action"][:, :action_dim]
+            self._frames_for_episodes(self.train_mask, "action")[:, :action_dim]
         )
         for key in self.lowdim_keys:
             obs_dim = self.shape_meta["obs"][key]["shape"][0]
             normalizer[key] = SingleFieldLinearNormalizer.create_fit(
-                self.replay_buffer[key][:, :obs_dim]
+                self._frames_for_episodes(self.train_mask, key)[:, :obs_dim]
             )
         for key in self.rgb_keys:
             normalizer[key] = get_image_range_normalizer()

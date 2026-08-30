@@ -1,0 +1,32 @@
+defaults:
+  - train_multitask_flow_matching_workspace
+  - _self_
+
+name: train_object_search_flow_matching_unet_image
+task_name: object_search
+exp_name: object_search_fm_ep100_seed42
+
+task:
+  name: object_search
+  task_specs:
+    - task_id: object_search
+      text: object search
+      dataset: explore_quan_June17
+      isaacgym_cfg_name: isaacgym_config_object_search.yaml
+      action_dim: 7
+  env_runner:
+    n_test: 0
+    n_test_vis: 0
+  dataset:
+    max_train_episodes: 50
+
+training:
+  num_epochs: 100
+  checkpoint_every: 10
+  val_every: 10
+  sample_every: 10
+
+checkpoint:
+  prune: false
+  save_best_val_ckpt: false
+

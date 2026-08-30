@@ -257,6 +257,46 @@ def test_flow_matching_table1_configs_use_masked_fm_policy() -> None:
     assert "freeze_rgb_model: true" in adavip_fm_config
 
 
+def test_object_search_fm_training_config_is_single_task_unbounded() -> None:
+    config = (
+        REPO_ROOT
+        / "configs/manifeel/train_object_search_flow_matching_workspace.yaml"
+    ).read_text()
+    assert "task_name: object_search" in config
+    assert "task_id: object_search" in config
+    assert "dataset: explore_quan_June17" in config
+    assert "num_epochs: 100" in config
+    assert "checkpoint_every: 10" in config
+    assert "prune: false" in config
+
+
+def test_fm_embedding_eval_uses_retained_checkpoint_and_dynamic_output() -> None:
+    text = (REPO_ROOT / "slurm/manifeel/eval_fm_embedding_ablation.sbatch").read_text()
+    assert "latest_epoch900.ckpt" in text
+    assert "CHECKPOINT_EPOCH=\"${BASH_REMATCH[1]}\"" in text
+    assert "table1_fm_epoch${CHECKPOINT_EPOCH}_power_plug" in text
+
+
+def test_fm_all_task_eval_runs_full_sequential_suite() -> None:
+    text = (REPO_ROOT / "slurm/manifeel/eval_fm_all_tasks.sbatch").read_text()
+    assert "eval_multitask_checkpoint.py" in text
+    assert "--task-id" not in text
+    assert "MANIFEEL_TASK_EMBEDDING_MODE=correct" in text
+    assert 'N_TEST="${MANIFEEL_EVAL_N_TEST:-10}"' in text
+    assert 'MAX_STEPS="${MANIFEEL_EVAL_MAX_STEPS:-500}"' in text
+    assert "camera_preflight=passed" in text
+
+
+def test_fm_task_eval_isolates_one_full_rollout() -> None:
+    text = (REPO_ROOT / "slurm/manifeel/eval_fm_task.sbatch").read_text()
+    assert 'TASK_ID="${MANIFEEL_EVAL_TASK_ID:?Set MANIFEEL_EVAL_TASK_ID}"' in text
+    assert '--task-id "${TASK_ID}"' in text
+    assert "MANIFEEL_TASK_EMBEDDING_MODE=correct" in text
+    assert 'N_TEST="${MANIFEEL_EVAL_N_TEST:-10}"' in text
+    assert 'MAX_STEPS="${MANIFEEL_EVAL_MAX_STEPS:-500}"' in text
+    assert "camera_preflight=passed" in text
+
+
 def test_masked_flow_matching_loss_ignores_padded_actions() -> None:
     torch = pytest.importorskip("torch")
     policy_module = pytest.importorskip("adavip.manifeel.multitask_policy")

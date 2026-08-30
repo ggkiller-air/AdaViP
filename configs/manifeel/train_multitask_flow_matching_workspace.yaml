@@ -4,7 +4,7 @@ defaults:
   - _self_
 
 name: train_multitask_flow_matching_unet_image
-_target_: manifeel.workspace.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspace
+_target_: adavip.manifeel.fm_workspace.TrainDiffusionUnetImageWorkspace
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}
@@ -222,6 +222,7 @@ logging:
   group: null
 
 checkpoint:
+  prune: true
   topk:
     monitor_key: train_loss
     mode: min

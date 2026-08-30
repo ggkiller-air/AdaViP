@@ -33,8 +33,11 @@ def build_command(
     wandb_mode: str,
     overrides: Sequence[str],
     task_config: str = DEFAULT_TASK_CONFIG,
+    num_processes: int = 1,
 ) -> list[str]:
     """Build the upstream DP command with the local offline task config."""
+    if num_processes < 1:
+        raise ValueError("num_processes must be at least 1")
     environment_accelerate = python.parent / "accelerate"
     accelerate = (
         str(environment_accelerate)
@@ -46,9 +49,10 @@ def build_command(
 
     task_name = task_config[:-5] if task_config.endswith("_30hz") else task_config
     run_name = f"{task_name}_seed{seed}"
-    return [
-        accelerate,
-        "launch",
+    command = [accelerate, "launch"]
+    if num_processes > 1:
+        command.extend(["--multi_gpu", "--num_processes", str(num_processes)])
+    command.extend([
         str(rdp_root / "train.py"),
         "--config-name=train_diffusion_unet_real_image_workspace",
         f"hydra.searchpath=[file://{CONFIG_SEARCH_PATH.resolve()}]",
@@ -57,7 +61,7 @@ def build_command(
         f"task.name={run_name}",
         f"training.seed={seed}",
         "training.rollout_every=0",
-        "training.num_epochs=200",
+        "training.num_epochs=100",
         "training.checkpoint_every=10",
         "training.sample_every=10",
         "dataloader.batch_size=32",
@@ -69,7 +73,8 @@ def build_command(
         f"logging.name={run_name}",
         f"hydra.run.dir={output.resolve()}",
         *overrides,
-    ]
+    ])
+    return command
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--rdp-root", type=Path, default=DEFAULT_RDP_ROOT)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
+    parser.add_argument("--num-processes", type=int, default=1)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("overrides", nargs="*", help="Additional Hydra overrides")
     return parser.parse_args()
@@ -106,6 +112,7 @@ def main() -> int:
             wandb_mode=args.wandb_mode,
             overrides=args.overrides,
             task_config=args.task_config,
+            num_processes=args.num_processes,
         )
     except FileNotFoundError as error:
         print(f"error: {error}", file=sys.stderr)
