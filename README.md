@@ -168,6 +168,19 @@ bash scripts/manifeel/smoke_eval_dp.sh \
 `scripts/manifeel/train_multitask_dp.sh`。长训练和正式评估建议通过对应的
 `slurm/manifeel/` sbatch 脚本提交，并先完成本节的 headless smoke 和相机预检。
 
+训练完成后，如需把 multi-task FM 的 epoch 100-600 checkpoint 上传到
+ModelScope，可在已登录 ModelScope 的机器上运行：
+
+```bash
+bash scripts/manifeel/upload_multifm_modelscope.sh
+```
+
+脚本默认读取
+`/data/wangzihao/outputs/manifeel/table1_fm_b416_w12_e700_retrain_seed42`，
+上传到 `ggkiller/multi-fm`，并自动 unset HTTP/SOCKS 代理。路径或仓库不同
+时使用 `MULTIFM_RUN_ROOT`、`MODELSCOPE_REPO_ID` 和 `MODELSCOPE_REVISION` 覆盖；
+ModelScope 仓库必须事先创建，且当前账号需要有写权限。
+
 ### 7. 仿真故障排查清单
 
 - `isaacgym` 导入失败：确认使用 TacSL 专用归档，并检查
