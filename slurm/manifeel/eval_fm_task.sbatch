@@ -19,13 +19,15 @@ if [[ "${CHECKPOINT_NAME}" =~ _epoch([0-9]+)\.ckpt$ ]]; then
 else
     CHECKPOINT_EPOCH="unknown"
 fi
-OUTPUT_DIR="${MANIFEEL_EVAL_OUTPUT_DIR:-${OUTPUT_ROOT}/table1_fm_epoch${CHECKPOINT_EPOCH}_${TASK_ID}_n10_steps500_job${SLURM_JOB_ID}}"
+EVAL_LABEL="${MANIFEEL_EVAL_LABEL:-table1_fm_epoch${CHECKPOINT_EPOCH}}"
 N_TEST="${MANIFEEL_EVAL_N_TEST:-10}"
 MAX_STEPS="${MANIFEEL_EVAL_MAX_STEPS:-500}"
+TEST_START_SEED="${MANIFEEL_EVAL_TEST_START_SEED:-100000}"
+OUTPUT_DIR="${MANIFEEL_EVAL_OUTPUT_DIR:-${OUTPUT_ROOT}/${EVAL_LABEL}_${TASK_ID}_seed${TEST_START_SEED}_n${N_TEST}_steps${MAX_STEPS}_job${SLURM_JOB_ID}}"
 DEVICE="${MANIFEEL_DEVICE:-cuda:0}"
 CAMERA_PREFLIGHT_FRAMES="${MANIFEEL_CAMERA_PREFLIGHT_FRAMES:-100}"
 CAMERA_PREFLIGHT_TIMEOUT="${MANIFEEL_CAMERA_PREFLIGHT_TIMEOUT:-180}"
-GPU_LOG="${OUTPUT_ROOT}/slurm/${SLURM_JOB_NAME}_${SLURM_JOB_ID}_gpu.csv"
+GPU_LOG="${MANIFEEL_GPU_LOG:-${OUTPUT_ROOT}/slurm/${SLURM_JOB_NAME}_${SLURM_JOB_ID}_gpu.csv}"
 
 case "${TASK_ID}" in
     peg_insertion|usb_insertion|power_plug_insertion|gear_assembly|nut_bolt_assembly|bulb_installation|peg_reorientation|object_search|ball_sorting) ;;
@@ -53,7 +55,7 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 print_manifeel_context
 echo "[task-eval] job_id=${SLURM_JOB_ID} node=$(hostname)"
 echo "[task-eval] checkpoint=${CHECKPOINT} task=${TASK_ID} output_dir=${OUTPUT_DIR}"
-echo "[task-eval] n_test=${N_TEST} max_steps=${MAX_STEPS} embedding_mode=correct"
+echo "[task-eval] n_test=${N_TEST} max_steps=${MAX_STEPS} test_start_seed=${TEST_START_SEED} embedding_mode=correct"
 nvidia-smi -L || true
 scontrol show job "${SLURM_JOB_ID}" -dd | grep -E 'JobId=|NodeList=|GRES=|IDX:' || true
 
@@ -97,6 +99,7 @@ PYTHONFAULTHANDLER=1 \
     --task-id "${TASK_ID}" \
     --n-test "${N_TEST}" \
     --n-test-vis 0 \
-    --max-steps "${MAX_STEPS}"
+    --max-steps "${MAX_STEPS}" \
+    --test-start-seed "${TEST_START_SEED}"
 
 echo "[task-eval] result=${OUTPUT_DIR}/eval_log.json"

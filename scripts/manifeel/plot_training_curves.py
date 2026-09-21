@@ -24,6 +24,11 @@ def parse_args() -> argparse.Namespace:
         default=500,
         help="Moving-average window for the displayed training curve",
     )
+    parser.add_argument(
+        "--max-epoch",
+        type=int,
+        help="Only plot records through this inclusive epoch",
+    )
     return parser.parse_args()
 
 
@@ -59,16 +64,28 @@ def load_records(path: Path) -> list[dict[str, float]]:
 def main() -> None:
     args = parse_args()
     records = load_records(args.log_path)
-    train = [
-        (int(record["global_step"]), float(record["train_loss"]))
+
+    def within_limit(record: dict[str, float]) -> bool:
+        if args.max_epoch is None:
+            return True
+        epoch = record.get("epoch")
+        return epoch is not None and int(epoch) <= args.max_epoch
+
+    # A resumed run can append records whose global steps overlap the original
+    # run. Keeping the last occurrence selects the resumed values, then sorting
+    # restores a monotonic x-axis for plotting.
+    train_by_step = {
+        int(record["global_step"]): float(record["train_loss"])
         for record in records
-        if "global_step" in record and "train_loss" in record
-    ]
-    validation = [
-        (int(record["epoch"]), float(record["val_loss"]))
+        if "global_step" in record and "train_loss" in record and within_limit(record)
+    }
+    train = sorted(train_by_step.items())
+    validation_by_epoch = {
+        int(record["epoch"]): float(record["val_loss"])
         for record in records
-        if "epoch" in record and "val_loss" in record
-    ]
+        if "epoch" in record and "val_loss" in record and within_limit(record)
+    }
+    validation = sorted(validation_by_epoch.items())
     if not train:
         raise ValueError(f"No train_loss records found in {args.log_path}")
 

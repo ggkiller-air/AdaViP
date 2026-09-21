@@ -145,29 +145,18 @@ def test_multitask_config_declares_protocol() -> None:
 
 
 def test_table1_multitask_configs_have_training_defaults() -> None:
-    configs = {
-        "train_multitask_diffusion_workspace.yaml": "table1_dp_b416_w12_ep300_seed42",
-        "train_multitask_vistac_diffusion_workspace.yaml": "table1_vistac_dp_b416_w12_ep300_seed42",
-        "train_multitask_adavip_diffusion_workspace.yaml": "table1_adavip_dp_b416_w12_ep300_seed42",
-        "train_multitask_flow_matching_workspace.yaml": "table1_fm_b416_w12_ep300_seed42",
-        "train_multitask_adavip_flow_matching_workspace.yaml": "table1_adavip_fm_b416_w12_ep300_seed42",
-    }
-    for config_name, run_name in configs.items():
-        text = (REPO_ROOT / "configs/manifeel" / config_name).read_text()
-        assert f"exp_name: {run_name}" in text
-        assert "batch_size: 416" in text
-        assert "num_workers: 12" in text
-        assert "num_epochs: 300" in text
-        assert "checkpoint_every: 30" in text
-        assert "val_every: 30" in text
-        assert "sample_every: 30" in text
-        assert "rollout_every: 0" in text
-        assert "project: manifeel_multitask" in text
-        assert "resume: allow" in text
-        assert "name: ${exp_name}" in text
-        assert "id: ${exp_name}" in text
-        assert "mode: offline" in text
-        assert "save_best_val_ckpt: true" in text
+    configs = sorted((REPO_ROOT / "configs/manifeel").glob("train_multitask_*.yaml"))
+    assert [path.name for path in configs] == ["train_multitask_diffusion_workspace.yaml"]
+    text = configs[0].read_text()
+    assert "exp_name: table1_dp_b416_w12_ep300_seed42" in text
+    for expected in (
+        "batch_size: 416", "num_workers: 12", "num_epochs: 300",
+        "checkpoint_every: 30", "val_every: 30", "sample_every: 30",
+        "rollout_every: 0", "project: manifeel_multitask",
+        "resume: allow", "name: ${exp_name}", "id: ${exp_name}",
+        "mode: offline", "save_best_val_ckpt: true",
+    ):
+        assert expected in text
 
 
 def test_total_epoch_target_for_fresh_training() -> None:
@@ -236,40 +225,6 @@ def test_periodic_checkpoint_pruning_preserves_best_val(tmp_path) -> None:
     assert best_path.is_file()
 
 
-def test_flow_matching_table1_configs_use_masked_fm_policy() -> None:
-    fm_config = (
-        REPO_ROOT / "configs/manifeel/train_multitask_flow_matching_workspace.yaml"
-    ).read_text()
-    adavip_fm_config = (
-        REPO_ROOT
-        / "configs/manifeel/train_multitask_adavip_flow_matching_workspace.yaml"
-    ).read_text()
-
-    for text in (fm_config, adavip_fm_config):
-        assert "_target_: adavip.manifeel.multitask_policy.MaskedFMDP" in text
-        assert "_target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler" in text
-        assert "left_tactile_camera_taxim:" in text
-        assert "right_tactile_camera_taxim:" in text
-        assert "batch_size: 416" in text
-        assert "prefetch_factor: 1" in text
-
-    assert "_target_: adavip.manifeel.adavip_obs_encoder.AdaViPObsEncoder" in adavip_fm_config
-    assert "freeze_rgb_model: true" in adavip_fm_config
-
-
-def test_object_search_fm_training_config_is_single_task_unbounded() -> None:
-    config = (
-        REPO_ROOT
-        / "configs/manifeel/train_object_search_flow_matching_workspace.yaml"
-    ).read_text()
-    assert "task_name: object_search" in config
-    assert "task_id: object_search" in config
-    assert "dataset: explore_quan_June17" in config
-    assert "num_epochs: 100" in config
-    assert "checkpoint_every: 10" in config
-    assert "prune: false" in config
-
-
 def test_fm_embedding_eval_uses_retained_checkpoint_and_dynamic_output() -> None:
     text = (REPO_ROOT / "slurm/manifeel/eval_fm_embedding_ablation.sbatch").read_text()
     assert "latest_epoch900.ckpt" in text
@@ -295,6 +250,17 @@ def test_fm_task_eval_isolates_one_full_rollout() -> None:
     assert 'N_TEST="${MANIFEEL_EVAL_N_TEST:-10}"' in text
     assert 'MAX_STEPS="${MANIFEEL_EVAL_MAX_STEPS:-500}"' in text
     assert "camera_preflight=passed" in text
+
+
+def test_adavip_fm_upload_uses_complete_workspace_checkpoints() -> None:
+    text = (REPO_ROOT / "scripts/manifeel/upload_adavip_fm_modelscope.sh").read_text()
+    assert 'EPOCHS="${ADAVIP_FM_EPOCHS:-120 150 210}"' in text
+    assert "MIN_FULL_CHECKPOINT_BYTES" in text
+    assert "archive/data.pkl" in text
+    assert 'adavip-fm/checkpoints/latest_epoch${epoch}.ckpt' in text
+    assert "hyper_adavip_obs_encoder.py" in text
+    assert "export_deployable_checkpoint.py" not in text
+    assert ".deploy.ckpt" not in text
 
 
 def test_masked_flow_matching_loss_ignores_padded_actions() -> None:

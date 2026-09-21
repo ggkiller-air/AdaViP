@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-test-vis", type=int, default=0)
     parser.add_argument("--max-steps", type=int, default=500)
     parser.add_argument(
+        "--test-start-seed",
+        type=int,
+        default=None,
+        help="First deterministic evaluation seed passed to the environment runner.",
+    )
+    parser.add_argument(
         "--task-id",
         choices=[spec.task_id for spec in DEFAULT_TASK_SPECS],
         help="Evaluate one task instead of running the full sequential suite.",
@@ -69,6 +75,8 @@ def main() -> None:
             "--max-steps",
             str(args.max_steps),
         ]
+        if args.test_start_seed is not None:
+            command.extend(["--test-start-seed", str(args.test_start_seed)])
         subprocess.run(command, cwd=manifeel_root, check=True)
 
         task_log_path = task_output_dir / "eval_log.json"

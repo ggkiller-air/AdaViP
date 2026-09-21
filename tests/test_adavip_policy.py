@@ -7,6 +7,7 @@ from torch import nn
 
 from adavip.model import AdaViPPerception
 from adavip.manifeel.adavip_obs_encoder import AdaViPObsEncoder
+from adavip.manifeel.hyper_adavip_obs_encoder import HyperAdaViPObsEncoder
 from adavip.policy import AdaViPPolicy
 
 
@@ -28,6 +29,15 @@ class DummyRgbEncoder(nn.Module):
         batch_size = image.shape[0]
         pooled = image.mean(dim=(1, 2, 3), keepdim=False).unsqueeze(-1)
         return pooled.repeat(1, self.output_dim)
+
+
+class DummyFeatureMapEncoder(nn.Module):
+    def __init__(self, output_dim: int):
+        super().__init__()
+        self.projection = nn.Conv2d(3, output_dim, 1)
+
+    def forward_feature_map(self, image):
+        return nn.functional.adaptive_avg_pool2d(self.projection(image), (8, 8))
 
 
 def make_policy():
@@ -152,3 +162,70 @@ def test_adavip_obs_encoder_can_freeze_rgb_backbones():
     )
     encoder.train()
     assert all(not model.training for model in encoder.key_model_map.values())
+
+
+def test_hyper_adavip_preserves_baseline_concat_width_and_freezes_backbones():
+    shape_meta = {
+        "obs": {
+            "front": {"shape": [3, 16, 16], "type": "rgb"},
+            "wrist": {"shape": [3, 16, 16], "type": "rgb"},
+            "left_tactile_camera_taxim": {"shape": [3, 16, 16], "type": "rgb"},
+            "right_tactile_camera_taxim": {"shape": [3, 16, 16], "type": "rgb"},
+            "state": {"shape": [7], "type": "low_dim"},
+            "task_embedding": {"shape": [5], "type": "low_dim"},
+        }
+    }
+    encoder = HyperAdaViPObsEncoder(
+        shape_meta=shape_meta,
+        rgb_model=DummyFeatureMapEncoder(output_dim=8),
+        projection_dim=4,
+        dynamic_channels=(3, 2, 2),
+        hypernet_hidden_dim=8,
+        norm_groups=2,
+    )
+    obs = {
+        key: torch.randn(2, 3, 16, 16)
+        for key in (
+            "front",
+            "wrist",
+            "left_tactile_camera_taxim",
+            "right_tactile_camera_taxim",
+        )
+    }
+    obs["state"] = torch.randn(2, 7)
+    obs["task_embedding"] = torch.randn(2, 5)
+
+    assert encoder.output_shape() == (44,)
+    output = encoder(obs)
+    assert output.shape == (2, 44)
+    output.square().mean().backward()
+    assert all(
+        parameter.grad is None
+        for model in encoder.key_model_map.values()
+        for parameter in model.parameters()
+    )
+    assert any(parameter.grad is not None for parameter in encoder.hypernets.parameters())
+    assert any(parameter.grad is not None for parameter in encoder.decoders.parameters())
+
+
+def test_hyper_adavip_uses_full_dynamic_convolution_parameter_count():
+    shape_meta = {
+        "obs": {
+            "front": {"shape": [3, 16, 16], "type": "rgb"},
+            "wrist": {"shape": [3, 16, 16], "type": "rgb"},
+            "left_tactile_camera_taxim": {"shape": [3, 16, 16], "type": "rgb"},
+            "right_tactile_camera_taxim": {"shape": [3, 16, 16], "type": "rgb"},
+            "state": {"shape": [7], "type": "low_dim"},
+            "task_embedding": {"shape": [5], "type": "low_dim"},
+        }
+    }
+    encoder = HyperAdaViPObsEncoder(
+        shape_meta=shape_meta,
+        rgb_model=DummyFeatureMapEncoder(output_dim=8),
+        projection_dim=4,
+        dynamic_channels=(3, 2, 2),
+        hypernet_hidden_dim=8,
+    )
+
+    expected = 3 * 4 * 9 + 3 + 2 * 3 * 9 + 2 + 2 * 2 * 9 + 2
+    assert encoder.hypernets["front"].net[-1].out_features == expected

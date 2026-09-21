@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=mf-t1-eval
-#SBATCH --nodelist=server44
 #SBATCH --gres=gpu:NVIDIAH200:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G

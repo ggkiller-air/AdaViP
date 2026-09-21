@@ -9,6 +9,7 @@ REVISION="${MODELSCOPE_REVISION:-master}"
 RUN_ROOT="${MULTIFM_RUN_ROOT:-/data/wangzihao/outputs/manifeel/table1_fm_b416_w12_e700_retrain_seed42}"
 CHECKPOINT_DIR="${RUN_ROOT}/checkpoints"
 MODELSCOPE_BIN="${MODELSCOPE_BIN:-$(command -v modelscope || true)}"
+EPOCHS="${MODELSCOPE_EPOCHS:-100 200 300 400 500 600}"
 
 if [[ -z "${MODELSCOPE_BIN}" || ! -x "${MODELSCOPE_BIN}" ]]; then
     echo "ModelScope CLI not found; install it with: pip install modelscope" >&2
@@ -52,7 +53,7 @@ upload_file() {
         "${REPO_ID}" "${source_path}" "${destination_path}"
 }
 
-for epoch in 100 200 300 400 500 600; do
+for epoch in ${EPOCHS}; do
     upload_file \
         "${CHECKPOINT_DIR}/latest_epoch${epoch}.ckpt" \
         "checkpoints/latest_epoch${epoch}.ckpt"

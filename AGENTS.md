@@ -34,6 +34,12 @@
   enough CPUs, set a sufficiently large batch size when memory allows, and
   increase DataLoader workers to keep the GPU utilized. The cluster has ample
   CPU capacity, so avoid under-requesting CPUs for GPU jobs.
+- Do not constrain, select, exclude, or otherwise steer Slurm node placement
+  for ManiFeel training or evaluation. In particular, do not use
+  `--nodelist`, `--exclude`, `--constraint`, or equivalent node-selection
+  options in scripts or submission commands. Submit resource-only jobs and
+  let the scheduler choose the node; record the assigned node only for
+  diagnostics. This is an administrator requirement.
 - Before starting GPU-dependent work, inspect the current allocation and GPU
   processes, report the GPU model, memory, utilization, and relevant running
   jobs to the user, and wait for confirmation before launching training or
