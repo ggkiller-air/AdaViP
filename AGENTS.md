@@ -93,6 +93,11 @@ or generated outputs.
 
 ## ManiFeel Review Notes
 
+- Keep the Power Plug paper/baseline training series, including continuations
+  and modality variants, at the upstream train and validation batch size of 8
+  for comparable results. Do not apply the earlier throughput-oriented batch
+  sizes of 512 or larger to this series unless the user explicitly requests a
+  protocol change; make `batch8` explicit in new run and artifact names.
 - ManiFeel demonstrations are Zarr trajectory stores. `shape_meta` selects the
   observations used by both the dataset loader and simulator: USB
   `vision_wrist` uses `wrist + state`; `vistac_wrist` and `visff_wrist` add the

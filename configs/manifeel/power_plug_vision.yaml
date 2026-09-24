@@ -1,14 +1,14 @@
 task: vision_wrist
 dataset_path: /data/wangzihao/datasets/manifeel/plug_quan_Aug02
 isaacgym_cfg_name: isaacgym_config_power_plug.yaml
-run_name: dp_power_plug_vision_seed42
+run_name: dp_power_plug_vision_batch8_seed42
 num_demos: 50
 num_epochs: 1000
 seed: 42
 rollout_every: 0
 checkpoint_every: 100
 val_every: 10
-batch_size: 512
+batch_size: 8
 num_workers: 8
-val_batch_size: 128
+val_batch_size: 8
 val_num_workers: 2

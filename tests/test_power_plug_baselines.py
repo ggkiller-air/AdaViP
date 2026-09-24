@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 import pytest
 from omegaconf import OmegaConf
@@ -15,6 +16,8 @@ TASK_KEYS = {
     "tacrgb": ("vistac_wrist", {"wrist", "right_tactile_camera_taxim", "state"}),
     "tacff": ("visff_wrist", {"wrist", "tactile_force_field_right", "state"}),
 }
+EXPECTED_EPOCHS = {"vision": 1000, "tacrgb": 400, "tacff": 1000}
+EXPECTED_CHECKPOINT_EVERY = {"vision": 100, "tacrgb": 50, "tacff": 100}
 
 
 @pytest.mark.parametrize("method", TASK_KEYS)
@@ -26,13 +29,14 @@ def test_power_plug_upstream_config_composes(method: str) -> None:
     assert profile.isaacgym_cfg_name == "isaacgym_config_power_plug.yaml"
     assert profile.dataset_path == "/data/wangzihao/datasets/manifeel/plug_quan_Aug02"
     assert profile.num_demos == 50
-    assert profile.num_epochs == 1000
-    assert profile.checkpoint_every == 100
+    assert profile.num_epochs == EXPECTED_EPOCHS[method]
+    assert profile.checkpoint_every == EXPECTED_CHECKPOINT_EVERY[method]
     assert profile.rollout_every == 0
-    assert profile.run_name == f"dp_power_plug_{method}_seed42"
-    assert profile.batch_size == 512
+    expected_suffix = "_ep400" if method == "tacrgb" else ""
+    assert profile.run_name == f"dp_power_plug_{method}_batch8{expected_suffix}_seed42"
+    assert profile.batch_size == 8
     assert profile.num_workers == 8
-    assert profile.val_batch_size == 128
+    assert profile.val_batch_size == 8
     assert profile.val_num_workers == 2
 
     config_dir = str(REPO_ROOT / "third_party/manifeel/manifeel/config")
@@ -62,6 +66,35 @@ def test_power_plug_batch_script_avoids_node_selection() -> None:
     assert "--mem=512G" in script
     for option in ("--nodelist", "--exclude", "--constraint"):
         assert option not in script
+
+
+def test_power_plug_tacrgb_ep400_script_avoids_node_selection() -> None:
+    script = (
+        REPO_ROOT / "slurm/manifeel/train_power_plug_tacrgb_ep400.sbatch"
+    ).read_text()
+    assert "--gres=gpu:1" in script
+    assert "train_power_plug_baseline.py tacrgb" in script
+    for option in ("--nodelist", "--exclude", "--constraint"):
+        assert option not in script
+
+
+def test_power_plug_tacrgb_ep400_launcher_dry_run() -> None:
+    result = subprocess.run(
+        [
+            "/public/home/wangzihao/.local/miniforge3/envs/manifeel/bin/python",
+            str(REPO_ROOT / "scripts/manifeel/train_power_plug_baseline.py"),
+            "tacrgb",
+            "--dry-run",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "NUM_EPOCHS=400" in result.stdout
+    assert "CHECKPOINT_EVERY=50" in result.stdout
+    assert "batch_size=8" in result.stdout
+    assert "RetainedDiffusionUnetImageWorkspace" in result.stdout
 
 
 def test_power_plug_workspace_keeps_periodic_and_final_checkpoints(monkeypatch) -> None:
