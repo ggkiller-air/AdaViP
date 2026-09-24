@@ -182,6 +182,23 @@ def test_film_fusion_config_has_only_active_piper_path() -> None:
     assert "task_embedding" not in rendered
 
 
+def test_film_fusion_config_allows_external_asset_overrides(monkeypatch) -> None:
+    omega = pytest.importorskip("omegaconf")
+    omega.OmegaConf.register_new_resolver("eval", eval, replace=True)
+    monkeypatch.setenv("ADAVIP_FILM_FUSION_CLIP_CHECKPOINT", "/models/RN50.pt")
+    monkeypatch.setenv("ADAVIP_FILM_FUSION_CLIP_SOURCE_ROOT", "/src/CLIP")
+    monkeypatch.setenv("ADAVIP_FILM_FUSION_SPARSH_CHECKPOINT", "/models/sparsh.ckpt")
+    monkeypatch.setenv("ADAVIP_FILM_FUSION_SPARSH_SOURCE_ROOT", "/src/sparsh")
+    cfg = omega.OmegaConf.load(
+        REPO_ROOT / "configs/manifeel/power_plug_adavip_film_fusion.yaml"
+    )
+    omega.OmegaConf.resolve(cfg)
+    assert cfg.policy.obs_encoder.clip_encoder.checkpoint_path == "/models/RN50.pt"
+    assert cfg.policy.obs_encoder.clip_encoder.source_root == "/src/CLIP"
+    assert cfg.policy.obs_encoder.sparsh_encoder.checkpoint_path == "/models/sparsh.ckpt"
+    assert cfg.policy.obs_encoder.sparsh_encoder.source_root == "/src/sparsh"
+
+
 def test_film_fusion_slurm_script_avoids_node_selection() -> None:
     script = (
         REPO_ROOT / "slurm/manifeel/train_power_plug_adavip_film_fusion.sbatch"

@@ -14,6 +14,14 @@ past_action_visible: false
 obs_as_global_cond: true
 tactile_frame_delta: 5
 
+# The frozen backbones are external assets. Override these four variables on
+# another host instead of editing this config (see the ModelScope downloader).
+film_fusion_assets:
+  clip_checkpoint: ${oc.env:ADAVIP_FILM_FUSION_CLIP_CHECKPOINT,/public/home/wangzihao/projects/Piper_adavip/checkpoints/pretrained/clip/RN50.pt}
+  clip_source_root: ${oc.env:ADAVIP_FILM_FUSION_CLIP_SOURCE_ROOT,/public/home/wangzihao/projects/Piper_adavip/third_party/CLIP}
+  sparsh_checkpoint: ${oc.env:ADAVIP_FILM_FUSION_SPARSH_CHECKPOINT,/public/home/wangzihao/projects/Piper_adavip/checkpoints/pretrained/sparsh/dino_vitbase.ckpt}
+  sparsh_source_root: ${oc.env:ADAVIP_FILM_FUSION_SPARSH_SOURCE_ROOT,/public/home/wangzihao/projects/Piper_adavip/third_party/sparsh}
+
 shape_meta: &shape_meta
   obs:
     wrist:
@@ -74,12 +82,12 @@ policy:
     _target_: adavip.manifeel.film_fusion_obs_encoder.FilmFusionObsEncoder
     clip_encoder:
       _target_: adavip.manifeel.frozen_backbones.FrozenClipEncoder
-      checkpoint_path: /public/home/wangzihao/projects/Piper_adavip/checkpoints/pretrained/clip/RN50.pt
-      source_root: /public/home/wangzihao/projects/Piper_adavip/third_party/CLIP
+      checkpoint_path: ${film_fusion_assets.clip_checkpoint}
+      source_root: ${film_fusion_assets.clip_source_root}
     sparsh_encoder:
       _target_: adavip.manifeel.frozen_backbones.FrozenSparshEncoder
-      checkpoint_path: /public/home/wangzihao/projects/Piper_adavip/checkpoints/pretrained/sparsh/dino_vitbase.ckpt
-      source_root: /public/home/wangzihao/projects/Piper_adavip/third_party/sparsh
+      checkpoint_path: ${film_fusion_assets.sparsh_checkpoint}
+      source_root: ${film_fusion_assets.sparsh_source_root}
       image_size: [320, 240]
     alpha_init: 0.01
     hidden_dim: 256
