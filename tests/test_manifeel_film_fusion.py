@@ -223,3 +223,16 @@ def test_film_fusion_launcher_dry_run() -> None:
     assert "power_plug_adavip_film_fusion" in result.stdout
     assert "batch8" in result.stdout
     assert "batch_size=512" not in result.stdout
+
+
+def test_film_fusion_asset_downloader_is_direct_and_unpacks_sources() -> None:
+    script = (
+        REPO_ROOT
+        / "scripts/manifeel/download_power_plug_adavip_film_fusion_assets.sh"
+    ).read_text()
+    assert "-u http_proxy" in script
+    assert "pretrained/film_fusion/source/CLIP_source.tar.gz" in script
+    assert "pretrained/film_fusion/source/sparsh_source.tar.gz" in script
+    assert "tar -xzf" in script
+    assert "clip/model.py" in script
+    assert "tactile_ssl/model/__init__.py" in script
