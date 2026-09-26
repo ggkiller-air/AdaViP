@@ -1,0 +1,179 @@
+name: train_power_plug_cs_fusion
+_target_: adavip.manifeel.retained_dp_workspace.RetainedDiffusionUnetImageWorkspace
+
+task_name: power_plug_cs_fusion
+exp_name: dp_power_plug_cs_fusion_batch8_ep400_seed42
+dataset_path: /data/wangzihao/datasets/manifeel/plug_quan_Aug02
+isaacgym_cfg_name: isaacgym_config_power_plug.yaml
+
+horizon: 16
+n_obs_steps: 2
+n_action_steps: 8
+n_latency_steps: 0
+past_action_visible: false
+obs_as_global_cond: true
+tactile_frame_delta: 5
+
+# The frozen backbones are external assets. Override these four variables on
+# another host instead of editing this config (see the ModelScope downloader).
+film_fusion_assets:
+  clip_checkpoint: ${oc.env:ADAVIP_FILM_FUSION_CLIP_CHECKPOINT,/public/home/wangzihao/projects/Piper_adavip/checkpoints/pretrained/clip/RN50.pt}
+  clip_source_root: ${oc.env:ADAVIP_FILM_FUSION_CLIP_SOURCE_ROOT,/public/home/wangzihao/projects/Piper_adavip/third_party/CLIP}
+  sparsh_checkpoint: ${oc.env:ADAVIP_FILM_FUSION_SPARSH_CHECKPOINT,/public/home/wangzihao/projects/Piper_adavip/checkpoints/pretrained/sparsh/dino_vitbase.ckpt}
+  sparsh_source_root: ${oc.env:ADAVIP_FILM_FUSION_SPARSH_SOURCE_ROOT,/public/home/wangzihao/projects/Piper_adavip/third_party/sparsh}
+
+shape_meta: &shape_meta
+  obs:
+    wrist:
+      shape: [3, 256, 256]
+      type: rgb
+    right_tactile_camera_taxim_pair:
+      shape: [6, 320, 240]
+      type: rgb
+    state:
+      shape: [7]
+      type: low_dim
+  action:
+    shape: [6]
+
+task:
+  name: power_plug_cs_fusion
+  shape_meta: *shape_meta
+  dataset:
+    _target_: adavip.manifeel.film_fusion_dataset.FilmFusionDataset
+    shape_meta: *shape_meta
+    zarr_path: ${dataset_path}
+    horizon: ${horizon}
+    pad_before: ${eval:'${n_obs_steps}-1'}
+    pad_after: ${eval:'${n_action_steps}-1'}
+    n_obs_steps: ${n_obs_steps}
+    tactile_frame_delta: ${tactile_frame_delta}
+    seed: ${training.seed}
+    val_ratio: 0.02
+    max_train_episodes: 50
+  env_runner:
+    _target_: adavip.manifeel.film_fusion_runner.FilmFusionRunner
+    shape_meta: *shape_meta
+    isaacgym_cfg_name: ${isaacgym_cfg_name}
+    n_test: 50
+    n_test_vis: 2
+    test_start_seed: 100000
+    max_steps: 500
+    n_obs_steps: ${n_obs_steps}
+    n_action_steps: ${n_action_steps}
+    tactile_frame_delta: ${tactile_frame_delta}
+    tactile_size: [320, 240]
+    fps: 10
+    past_action: ${past_action_visible}
+
+policy:
+  _target_: diffusion_policy.policy.diffusion_unet_image_policy.DiffusionUnetImagePolicy
+  shape_meta: *shape_meta
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    variance_type: fixed_small
+    clip_sample: true
+    prediction_type: epsilon
+  obs_encoder:
+    _target_: adavip.manifeel.cs_fusion_obs_encoder.CSFusionObsEncoder
+    clip_encoder:
+      _target_: adavip.manifeel.frozen_backbones.FrozenClipEncoder
+      checkpoint_path: ${film_fusion_assets.clip_checkpoint}
+      source_root: ${film_fusion_assets.clip_source_root}
+    sparsh_encoder:
+      _target_: adavip.manifeel.frozen_backbones.FrozenSparshEncoder
+      checkpoint_path: ${film_fusion_assets.sparsh_checkpoint}
+      source_root: ${film_fusion_assets.sparsh_source_root}
+      image_size: [320, 240]
+    token_dim: 256
+    num_heads: 4
+  horizon: ${horizon}
+  n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
+  n_obs_steps: ${n_obs_steps}
+  num_inference_steps: 100
+  obs_as_global_cond: ${obs_as_global_cond}
+  diffusion_step_embed_dim: 128
+  down_dims: [512, 1024, 2048]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+
+ema:
+  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
+  update_after_step: 0
+  inv_gamma: 1.0
+  power: 0.75
+  min_value: 0.0
+  max_value: 0.9999
+
+dataloader:
+  batch_size: 8
+  num_workers: 8
+  shuffle: true
+  pin_memory: true
+  prefetch_factor: 1
+  persistent_workers: true
+
+val_dataloader:
+  batch_size: 8
+  num_workers: 2
+  shuffle: false
+  pin_memory: true
+  prefetch_factor: 1
+  persistent_workers: true
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 8.0e-5
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-6
+
+training:
+  device: cuda:0
+  seed: 42
+  debug: false
+  resume: true
+  lr_scheduler: cosine
+  lr_warmup_steps: 500
+  num_epochs: 400
+  gradient_accumulate_every: 1
+  use_ema: true
+  rollout_every: 0
+  checkpoint_every: 50
+  val_every: 10
+  sample_every: 10000
+  max_train_steps: null
+  max_val_steps: null
+  tqdm_interval_sec: 1.0
+  freeze_encoder: false
+
+logging:
+  project: manifeel_cs_fusion
+  resume: true
+  mode: offline
+  name: ${exp_name}
+  tags: [cs_fusion, power_plug, batch8]
+  id: ${exp_name}
+  group: null
+
+checkpoint:
+  topk:
+    monitor_key: train_loss
+    mode: min
+    k: 5
+    format_str: 'epoch={epoch:04d}-train_loss={train_loss:.3f}.ckpt'
+  save_last_ckpt: true
+  save_last_snapshot: false
+  save_best_val_ckpt: true
+
+hydra:
+  job:
+    chdir: false
+    override_dirname: ${name}
+  run:
+    dir: /data/wangzihao/outputs/manifeel/${exp_name}
