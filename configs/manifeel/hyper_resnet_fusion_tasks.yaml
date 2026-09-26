@@ -1,0 +1,13 @@
+# Shared protocol for the eight non-Power-Plug single-task runs.
+num_demos: 50
+num_epochs: 301
+seed: 42
+use_fusion: true
+use_fusion_hypernet: false
+rollout_every: 0
+checkpoint_every: 100
+val_every: 10
+batch_size: 8
+num_workers: 8
+val_batch_size: 8
+val_num_workers: 2

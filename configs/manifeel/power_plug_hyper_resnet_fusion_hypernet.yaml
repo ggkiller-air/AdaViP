@@ -1,14 +1,14 @@
 task: vistac_wrist
 dataset_path: /data/wangzihao/datasets/manifeel/plug_quan_Aug02
 isaacgym_cfg_name: isaacgym_config_power_plug.yaml
-run_name: dp_power_plug_hyper_resnet_fusion_batch8_ep400_seed42
+run_name: dp_power_plug_hyper_resnet_fusion_hypernet_batch8_ep400_seed42
 num_demos: 50
 num_epochs: 400
 seed: 42
 use_fusion: true
-use_fusion_hypernet: false
+use_fusion_hypernet: true
 rollout_every: 0
-checkpoint_every: 50
+checkpoint_every: 100
 val_every: 10
 batch_size: 8
 num_workers: 8

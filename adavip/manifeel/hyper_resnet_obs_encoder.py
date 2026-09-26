@@ -18,7 +18,7 @@ CONDITION_DIM = 2 * FEATURE_DIM + STATE_DIM
 
 
 class HyperResNetObsEncoder(MultiImageObsEncoder):
-    """Modulate both trainable ResNet18 streams, optionally fusing them."""
+    """Modulate trainable ResNet18 streams and optionally their fusion."""
 
     def __init__(
         self,
@@ -31,6 +31,7 @@ class HyperResNetObsEncoder(MultiImageObsEncoder):
         share_rgb_model: bool = False,
         imagenet_norm: bool = False,
         use_fusion: bool = False,
+        use_fusion_hypernet: bool = False,
         hypernet_hidden_dim: int = 256,
         alpha_init: float = 0.01,
         alpha_max: float = 0.1,
@@ -57,11 +58,14 @@ class HyperResNetObsEncoder(MultiImageObsEncoder):
             raise ValueError(f"{state_key} must have shape [{STATE_DIM}]")
         if hypernet_hidden_dim <= 0 or not 0 < alpha_init < alpha_max:
             raise ValueError("HyperNet width must be positive and 0 < alpha_init < alpha_max")
+        if use_fusion_hypernet and not use_fusion:
+            raise ValueError("Fusion HyperNet requires use_fusion=True")
 
         self.vision_key = vision_key
         self.tactile_key = tactile_key
         self.state_key = state_key
         self.use_fusion = use_fusion
+        self.use_fusion_hypernet = use_fusion_hypernet
         self.hypernet = nn.Sequential(
             nn.Linear(CONDITION_DIM, hypernet_hidden_dim),
             nn.SiLU(),
@@ -81,11 +85,31 @@ class HyperResNetObsEncoder(MultiImageObsEncoder):
             batch_first=True,
         )
         self.fusion_gate = nn.Parameter(torch.tensor(0.0))
+        self.fusion_hypernet: nn.Module | None = None
+        self.fusion_residual_alpha: nn.Parameter | None = None
+        if use_fusion_hypernet:
+            self.fusion_hypernet = nn.Sequential(
+                nn.Linear(CONDITION_DIM, hypernet_hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hypernet_hidden_dim, 2 * FEATURE_DIM),
+            )
+            nn.init.zeros_(self.fusion_hypernet[-1].weight)
+            nn.init.zeros_(self.fusion_hypernet[-1].bias)
+            self.fusion_residual_alpha = nn.Parameter(
+                torch.tensor(math.log(alpha_fraction / (1 - alpha_fraction)))
+            )
 
     @property
     def alpha(self) -> Tensor:
         """Return the positive scale of the HyperNet residual."""
         return self.alpha_max * torch.sigmoid(self.residual_alpha)
+
+    @property
+    def fusion_alpha(self) -> Tensor:
+        """Return the positive scale of the fusion HyperNet residual."""
+        if self.fusion_residual_alpha is None:
+            raise RuntimeError("Fusion HyperNet is disabled")
+        return self.alpha_max * torch.sigmoid(self.fusion_residual_alpha)
 
     def output_shape(self) -> tuple[int]:
         """Return the baseline-compatible observation feature width."""
@@ -126,16 +150,35 @@ class HyperResNetObsEncoder(MultiImageObsEncoder):
             gamma_tactile * tactile + beta_tactile
         )
 
+        fused_vision = encoded[self.vision_key]
         if self.use_fusion:
-            vision_token = encoded[self.vision_key].unsqueeze(1)
+            vision_token = fused_vision.unsqueeze(1)
             tactile_token = encoded[self.tactile_key].unsqueeze(1)
             tokens = torch.cat((vision_token, tactile_token), dim=1)
             attended, _ = self.cross_attention(
                 vision_token, tokens, tokens, need_weights=False
             )
-            encoded[self.vision_key] = encoded[self.vision_key] + torch.tanh(
-                self.fusion_gate
-            ) * attended.squeeze(1)
+            fused_vision = fused_vision + torch.tanh(self.fusion_gate) * attended.squeeze(1)
+
+            if self.use_fusion_hypernet:
+                if self.fusion_hypernet is None:
+                    raise RuntimeError("Fusion HyperNet was not initialized")
+                fusion_context = torch.cat(
+                    (
+                        F.layer_norm(fused_vision, (FEATURE_DIM,)),
+                        F.layer_norm(encoded[self.tactile_key], (FEATURE_DIM,)),
+                        state,
+                    ),
+                    dim=-1,
+                )
+                gamma_fusion, beta_fusion = torch.tanh(
+                    self.fusion_hypernet(fusion_context)
+                ).chunk(2, dim=-1)
+                fused_vision = fused_vision + self.fusion_alpha * (
+                    gamma_fusion * fused_vision + beta_fusion
+                )
+
+        encoded[self.vision_key] = fused_vision
 
         return torch.cat(
             [encoded[key] for key in self.rgb_keys] + [state], dim=-1

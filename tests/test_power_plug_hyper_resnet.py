@@ -59,7 +59,33 @@ def test_hyper_resnet_starts_at_baseline_and_trains_both_streams(use_fusion: boo
         assert encoder.fusion_gate.grad is not None
 
 
-@pytest.mark.parametrize("method", ["fusion", "no_fusion"])
+def test_fusion_hypernet_starts_at_baseline_and_trains_fusion_path() -> None:
+    baseline = MultiImageObsEncoder(shape_meta=SHAPE_META, rgb_model=_fake_resnet())
+    encoder = HyperResNetObsEncoder(
+        shape_meta=SHAPE_META,
+        rgb_model=_fake_resnet(),
+        use_fusion=True,
+        use_fusion_hypernet=True,
+    )
+    encoder.load_state_dict(baseline.state_dict(), strict=False)
+    observations = {
+        "wrist": torch.rand(2, 3, 8, 8),
+        "right_tactile_camera_taxim": torch.rand(2, 3, 8, 8),
+        "state": torch.rand(2, 7),
+    }
+    torch.testing.assert_close(encoder(observations), baseline(observations))
+    assert encoder.fusion_hypernet is not None
+    assert encoder.fusion_alpha.item() == pytest.approx(0.01)
+
+    encoder(observations).square().mean().backward()
+    assert encoder.fusion_hypernet[-1].weight.grad is not None
+    assert encoder.fusion_hypernet[-1].weight.grad.abs().sum() > 0
+    assert encoder.fusion_residual_alpha is not None
+    assert encoder.fusion_residual_alpha.grad is not None
+    assert encoder.fusion_gate.grad is not None
+
+
+@pytest.mark.parametrize("method", ["fusion", "no_fusion", "fusion_hypernet"])
 def test_power_plug_hyper_resnet_profile_and_launcher(method: str) -> None:
     from omegaconf import OmegaConf
 
@@ -69,9 +95,10 @@ def test_power_plug_hyper_resnet_profile_and_launcher(method: str) -> None:
     assert cfg.task == "vistac_wrist"
     assert cfg.dataset_path.endswith("plug_quan_Aug02")
     assert cfg.isaacgym_cfg_name == "isaacgym_config_power_plug.yaml"
-    assert cfg.use_fusion == (method == "fusion")
+    assert cfg.use_fusion == (method != "no_fusion")
+    assert cfg.use_fusion_hypernet == (method == "fusion_hypernet")
     assert cfg.num_epochs == 400
-    assert cfg.checkpoint_every == 50
+    assert cfg.checkpoint_every == (100 if method == "fusion_hypernet" else 50)
     assert cfg.batch_size == cfg.val_batch_size == 8
     assert "batch8_ep400" in cfg.run_name
 
@@ -94,6 +121,11 @@ def test_power_plug_hyper_resnet_profile_and_launcher(method: str) -> None:
         text=True,
     )
     assert "HyperResNetObsEncoder" in result.stdout
-    assert f"+policy.obs_encoder.use_fusion={str(method == 'fusion').lower()}" in result.stdout
-    assert "MANIFEEL_CHECKPOINT_EVERY=50" in result.stdout
+    assert f"+policy.obs_encoder.use_fusion={str(method != 'no_fusion').lower()}" in result.stdout
+    assert (
+        f"+policy.obs_encoder.use_fusion_hypernet={str(method == 'fusion_hypernet').lower()}"
+        in result.stdout
+    )
+    expected_checkpoint_every = 100 if method == "fusion_hypernet" else 50
+    assert f"MANIFEEL_CHECKPOINT_EVERY={expected_checkpoint_every}" in result.stdout
     assert "MANIFEEL_NUM_EPOCHS=400" in result.stdout
