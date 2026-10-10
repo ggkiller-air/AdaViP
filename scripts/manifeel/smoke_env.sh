@@ -18,6 +18,7 @@ cd "${MANIFEEL_ROOT}"
 import hydra
 import numpy as np
 import os
+import sys
 from omegaconf import OmegaConf
 
 from manifeel.envs.vistac_isaacgym_multiple_env_wrapper import MultipleIsaacEnvWrapper
@@ -26,6 +27,13 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 config_dir = os.path.join(os.environ["MANIFEEL_ROOT"], "manifeel", "config")
 hydra.initialize_config_dir(config_dir=config_dir, version_base=None)
 cfg = hydra.compose(config_name="isaacgym_config_usb.yaml")
+device = os.environ["MANIFEEL_DEVICE"]
+if not device.startswith("cuda:"):
+    raise ValueError(f"MANIFEEL_DEVICE must be cuda:<physical-index>, got {device!r}")
+physical_device_id = int(device.split(":", 1)[1])
+cfg.sim_device = device
+cfg.rl_device = device
+cfg.graphics_device_id = physical_device_id
 cfg.num_envs = 1
 cfg.headless = True
 cfg.force_render = False
@@ -47,4 +55,7 @@ for step in range(5):
     obs, reward, reset, info = env.step(action)
     print("step", step, "reset_shape", reset.shape, "reward_shape", np.asarray(reward).shape)
 print("official headless environment reset/step: OK")
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
 PY

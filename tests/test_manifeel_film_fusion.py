@@ -65,6 +65,35 @@ def test_residual_film_uses_positive_piper_formula() -> None:
     assert film.alpha.item() > 0
 
 
+@pytest.mark.parametrize("fusion_mode", ("concat", "film", "film_attention"))
+def test_trainable_fusion_modes_share_backbones_and_condition_shape(fusion_mode: str) -> None:
+    """Train-time ablations retain the same frozen representations and DP width."""
+    module = pytest.importorskip("adavip.manifeel.film_fusion_obs_encoder")
+    torch.manual_seed(42)
+    encoder = module.FilmFusionObsEncoder(FakeClip(), FakeSparsh(), fusion_mode=fusion_mode)
+    observations = {
+        "wrist": torch.rand(2, 3, 16, 16),
+        "right_tactile_camera_taxim_pair": torch.rand(2, 6, 12, 10),
+        "state": torch.rand(2, 7),
+    }
+    features = encoder.fusion_features(observations)
+    assert features["condition"].shape == (2, 519)
+    assert features["hypernet_output"].shape == (2, 3584)
+    assert not any(parameter.requires_grad for parameter in encoder.clip_encoder.parameters())
+    assert not any(parameter.requires_grad for parameter in encoder.sparsh_encoder.parameters())
+    features["condition"].square().mean().backward()
+    assert encoder.condition_projection.weight.grad is not None
+    assert (encoder.hypernet.network[0].weight.grad is not None) == (fusion_mode != "concat")
+    assert (encoder.cross_attention.in_proj_weight.grad is not None) == (fusion_mode == "film_attention")
+
+
+def test_unsupported_fusion_mode_is_rejected() -> None:
+    """Avoid silently running an unintended training variant."""
+    module = pytest.importorskip("adavip.manifeel.film_fusion_obs_encoder")
+    with pytest.raises(ValueError, match="unsupported fusion_mode"):
+        module.FilmFusionObsEncoder(FakeClip(), FakeSparsh(), fusion_mode="mystery")
+
+
 def test_runner_adapter_pairs_current_then_delta_frame() -> None:
     module = pytest.importorskip("adavip.manifeel.film_fusion_runner")
 
@@ -233,6 +262,10 @@ def test_film_fusion_asset_downloader_is_direct_and_unpacks_sources() -> None:
     assert "-u http_proxy" in script
     assert "pretrained/film_fusion/source/CLIP_source.tar.gz" in script
     assert "pretrained/film_fusion/source/sparsh_source.tar.gz" in script
+    assert '--local-dir "${ASSET_ROOT}"' in script
+    assert '"${ASSET_ROOT}/${relative_path}"' in script
+    assert '"${REPO_ROOT}/third_party/CLIP"' in script
+    assert '"${REPO_ROOT}/third_party/sparsh"' in script
     assert "tar -xzf" in script
     assert "clip/model.py" in script
     assert "tactile_ssl/model/__init__.py" in script

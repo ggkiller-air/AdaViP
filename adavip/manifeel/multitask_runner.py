@@ -178,7 +178,7 @@ class MultiTaskManiFeelRunner(BaseImageRunner):
     def run(self, policy) -> dict:
         # Import lazily so CPU-side protocol tests can import this module without
         # touching IsaacGym. ManiFeel's train.py imports isaacgym before torch.
-        from manifeel.env_runner.vistac_pih_runner import ManifeelRunner
+        from adavip.manifeel.device_runner import DeviceAwareManifeelRunner
 
         if len(self.task_specs) != 1:
             raise RuntimeError(
@@ -191,10 +191,11 @@ class MultiTaskManiFeelRunner(BaseImageRunner):
         for task_index, spec in enumerate(self.task_specs):
             task_output_dir = Path(self.output_dir) / spec.task_id
             task_output_dir.mkdir(parents=True, exist_ok=True)
-            runner = ManifeelRunner(
+            runner = DeviceAwareManifeelRunner(
                 output_dir=str(task_output_dir),
                 shape_meta=self._shape_meta_for_task(spec),
                 isaacgym_cfg_name=spec.isaacgym_cfg_name,
+                device=os.environ.get("MANIFEEL_DEVICE", "cuda:0"),
                 n_test=self.n_test,
                 n_test_vis=self.n_test if self.retain_outcome_videos else self.n_test_vis,
                 test_start_seed=self.test_start_seed + task_index,

@@ -84,6 +84,7 @@ class FilmFusionRunner(BaseImageRunner):
         tactile_source_key: str = "right_tactile_camera_taxim",
         tactile_pair_key: str = "right_tactile_camera_taxim_pair",
         tactile_size: tuple[int, int] = (320, 240),
+        device: str | None = None,
     ) -> None:
         super().__init__(output_dir)
         raw_shape_meta = copy.deepcopy(shape_meta)
@@ -96,8 +97,16 @@ class FilmFusionRunner(BaseImageRunner):
         # Delay this import so CPU dataset/model tests do not import Isaac Gym.
         from manifeel.env_runner.vistac_pih_runner_unit import ManifeelRunner
 
+        runner_class = ManifeelRunner
+        device_kwargs = {}
+        if device is not None:
+            from adavip.manifeel.device_runner import DeviceAwareUnitManifeelRunner
+
+            runner_class = DeviceAwareUnitManifeelRunner
+            device_kwargs["device"] = device
+
         history_steps = int(n_obs_steps) + int(tactile_frame_delta)
-        runner = ManifeelRunner(
+        runner = runner_class(
             output_dir=output_dir,
             shape_meta=raw_shape_meta,
             isaacgym_cfg_name=isaacgym_cfg_name,
@@ -112,6 +121,7 @@ class FilmFusionRunner(BaseImageRunner):
             past_action=past_action,
             tqdm_interval_sec=tqdm_interval_sec,
             tactile_size=list(tactile_size),
+            **device_kwargs,
         )
         runner.env = FilmFusionObservationAdapter(
             runner.env,

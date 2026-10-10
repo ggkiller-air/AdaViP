@@ -53,6 +53,12 @@ third_party/IsaacGym_Preview_TacSL_Package/isaacgym/python/
 替代。若放在其他位置，设置 `MANIFEEL_ISAACGYM_ARCHIVE` 和
 `MANIFEEL_ISAACGYM_ROOT` 指向实际路径。
 
+FiLM Fusion 的 CLIP/Sparsh 推理源码放在 `third_party/CLIP/` 和
+`third_party/sparsh/`，预训练权重及源码归档留在 `/data/wangzihao/checkpoints/`，
+不提交到仓库。运行 `bash scripts/manifeel/download_power_plug_adavip_film_fusion_assets.sh`
+可补齐资产；单任务评估脚本会将 checkpoint 内保存的旧路径重映射到本地资产。
+CLIP 词表 `.gz` 和授权 Isaac Gym `.tar.gz` 仍是源码/环境安装所需文件，勿删除。
+
 ### 3. 安装和环境检查
 
 安装脚本创建 Python 3.8 的独立 Conda 环境，并安装已验证的 PyTorch/CUDA、

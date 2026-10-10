@@ -15,6 +15,7 @@ STATE_DIM = 7
 HYPERNET_INPUT_DIM = VISION_DIM + TACTILE_DIM + STATE_DIM
 HYPERNET_OUTPUT_DIM = 2 * VISION_DIM + 2 * TACTILE_DIM
 OUTPUT_DIM = 512 + STATE_DIM
+FUSION_MODES = ("concat", "film", "film_attention")
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,7 @@ class FilmFusionObsEncoder(nn.Module):
         hidden_dim: int = 256,
         token_dim: int = 256,
         num_heads: int = 4,
+        fusion_mode: str = "film_attention",
         vision_key: str = "wrist",
         tactile_key: str = "right_tactile_camera_taxim_pair",
         state_key: str = "state",
@@ -94,6 +96,9 @@ class FilmFusionObsEncoder(nn.Module):
         super().__init__()
         if token_dim != 256:
             raise ValueError("film_fusion requires token_dim=256")
+        if fusion_mode not in FUSION_MODES:
+            raise ValueError(f"unsupported fusion_mode: {fusion_mode}")
+        self.fusion_mode = fusion_mode
         self.clip_encoder = clip_encoder
         self.sparsh_encoder = sparsh_encoder
         self.clip_encoder.requires_grad_(False)
@@ -146,29 +151,39 @@ class FilmFusionObsEncoder(nn.Module):
 
         vision = F.layer_norm(vision.float(), (VISION_DIM,)).unsqueeze(1)
         tactile = F.layer_norm(tactile.float(), (TACTILE_DIM,)).unsqueeze(1)
-        parameters = self.hypernet(
-            torch.cat((vision.squeeze(1), tactile.squeeze(1), state), dim=-1)
-        )
-        adapted_vision = self.film(
-            vision,
-            parameters.gamma_vision,
-            parameters.beta_vision,
-        )
-        adapted_tactile = self.film(
-            tactile,
-            parameters.gamma_tactile,
-            parameters.beta_tactile,
-        )
+        if self.fusion_mode == "concat":
+            adapted_vision, adapted_tactile = vision, tactile
+            hypernet_output = vision.new_zeros((vision.shape[0], HYPERNET_OUTPUT_DIM))
+        else:
+            parameters = self.hypernet(
+                torch.cat((vision.squeeze(1), tactile.squeeze(1), state), dim=-1)
+            )
+            adapted_vision = self.film(
+                vision,
+                parameters.gamma_vision,
+                parameters.beta_vision,
+            )
+            adapted_tactile = self.film(
+                tactile,
+                parameters.gamma_tactile,
+                parameters.beta_tactile,
+            )
+            hypernet_output = torch.cat(
+                (parameters.gamma_vision, parameters.beta_vision,
+                 parameters.gamma_tactile, parameters.beta_tactile), dim=-1)
 
         vision_tokens = self.vision_projection(adapted_vision)
         tactile_tokens = self.tactile_projection(adapted_tactile)
-        key_value = torch.cat((vision_tokens, tactile_tokens), dim=1)
-        attended, _ = self.cross_attention(
-            vision_tokens,
-            key_value,
-            key_value,
-            need_weights=False,
-        )
+        if self.fusion_mode == "film_attention":
+            key_value = torch.cat((vision_tokens, tactile_tokens), dim=1)
+            attended, _ = self.cross_attention(
+                vision_tokens,
+                key_value,
+                key_value,
+                need_weights=False,
+            )
+        else:
+            attended = torch.zeros_like(vision_tokens)
         fused_vision = (vision_tokens + attended).flatten(1)
         direct_tactile = tactile_tokens.flatten(1)
         fusion = self.condition_projection(
@@ -176,15 +191,7 @@ class FilmFusionObsEncoder(nn.Module):
         )
         condition = torch.cat((fusion, state), dim=-1)
         return {
-            "hypernet_output": torch.cat(
-                (
-                    parameters.gamma_vision,
-                    parameters.beta_vision,
-                    parameters.gamma_tactile,
-                    parameters.beta_tactile,
-                ),
-                dim=-1,
-            ),
+            "hypernet_output": hypernet_output,
             "vision_tokens": vision_tokens,
             "tactile_tokens": tactile_tokens,
             "attention_output": attended,

@@ -29,7 +29,11 @@ for dataset_file in "${DATASET_FILES[@]}"; do
     dataset_dir="${MANIFEEL_DATA_ROOT}/${dataset_file%.zip}"
 
     "${SCRIPT_DIR}/download_dataset.sh" "${dataset_file}"
-    unzip -tq "${archive_path}"
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -tq "${archive_path}"
+    else
+        "${MANIFEEL_PYTHON}" -m zipfile -t "${archive_path}"
+    fi
 
     if [[ -f "${dataset_dir}/.zgroup" ]]; then
         echo "[manifeel] dataset already extracted: ${dataset_dir}"
@@ -38,7 +42,11 @@ for dataset_file in "${DATASET_FILES[@]}"; do
 
     # Official archives already contain a top-level directory named after the
     # dataset. Extracting into dataset_dir would create dataset/dataset/.zgroup.
-    unzip -oq "${archive_path}" -d "${MANIFEEL_DATA_ROOT}"
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -oq "${archive_path}" -d "${MANIFEEL_DATA_ROOT}"
+    else
+        "${MANIFEEL_PYTHON}" -m zipfile -e "${archive_path}" "${MANIFEEL_DATA_ROOT}"
+    fi
 
     # Some archives contain Zarr at the root, while others wrap it in a
     # directory named after the archive. Keep one canonical dataset path.

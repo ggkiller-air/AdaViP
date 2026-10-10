@@ -5,8 +5,8 @@
 - `adavip/model/` contains adaptive perception and transforms; `adavip/policy/`
   wraps them around an action backbone.
 - `tests/` contains PyTorch/pytest tests; `configs/` stores experiment settings.
-- `scripts/manifeel/` and `slurm/manifeel/` provide local and cluster smoke
-  tests. `docs/` holds decisions, paper assets, and the work log.
+- `scripts/manifeel/` provides local smoke, training, and evaluation workflows.
+  `docs/` holds decisions, paper assets, and the work log.
 - `third_party/` contains pinned reference dependencies; avoid editing them for
   integrations. Keep datasets, checkpoints, logs, and generated output outside
   Git as specified by `.gitignore`.
@@ -25,37 +25,28 @@
 
 ## Environment, Network & Communication
 
-- Use interactive GPU allocations for short, bounded preflight debugging
-  before long training runs. Verify training parameters, batch size, CPU
-  allocation, DataLoader workers, GPU utilization, and checkpoint/log behavior
-  during the preflight run.
-- Submit long-running training and formal evaluation jobs through `sbatch`.
-  Before submission, use the interactive-GPU preflight results to request
-  enough CPUs, set a sufficiently large batch size when memory allows, and
-  increase DataLoader workers to keep the GPU utilized. The cluster has ample
-  CPU capacity, so avoid under-requesting CPUs for GPU jobs.
-- Do not constrain, select, exclude, or otherwise steer Slurm node placement
-  for ManiFeel training or evaluation. In particular, do not use
-  `--nodelist`, `--exclude`, `--constraint`, or equivalent node-selection
-  options in scripts or submission commands. Submit resource-only jobs and
-  let the scheduler choose the node; record the assigned node only for
-  diagnostics. This is an administrator requirement.
-- Before starting GPU-dependent work, inspect the current allocation and GPU
+- Use short, bounded preflight debugging before long training runs. Verify
+  training parameters, batch size, CPU availability, DataLoader workers, GPU
+  utilization, and checkpoint/log behavior during the preflight run.
+- This server is for evaluation; large-scale training runs on `engram`, with
+  code synchronized through GitHub. For local GPU evaluations, select only
+  GPUs approved by the user, keep separate logs for concurrent processes,
+  and use persistent output directories under `/data/wangzihao/`.
+- Before starting GPU-dependent work, inspect the current GPU
   processes, report the GPU model, memory, utilization, and relevant running
   jobs to the user, and wait for confirmation before launching training or
   evaluation.
-- A training process already running only to keep an interactive allocation
-  alive may be terminated when the GPU is needed for the requested work; note
-  the termination in the development log.
+- A training process running only to keep a GPU busy may be terminated when
+  the GPU is needed for the requested work; note the termination in the
+  development log.
 - Install persistent environments, caches, and artifacts under
   `/public/home/wangzihao/` (or the approved `/data/wangzihao/` data root), not
   `/tmp/`, which may be cleaned automatically.
 - If a download is unusually slow or fails, first choose a domestic mirror or
   unset the proxy (for example, `MANIFEEL_UNSET_PROXY=1`). Do
   not try every route for every download; most ports work normally.
-- GPU unavailability is normal on login or CPU nodes. Do not replace a
-  GPU-specific check with irrelevant CPU testing; report the limitation and
-  ask the user to request an interactive GPU or submit an `sbatch` job.
+- If the approved GPUs are unavailable, do not replace a GPU-specific check
+  with irrelevant CPU testing; report the limitation and wait for direction.
 - Keep answers structured, evidence-based, and restrained. Recheck assumptions,
   state uncertainty, and request evidence when needed.
 
@@ -111,6 +102,22 @@ or generated outputs.
   Runtime policies implement `predict_action(obs_dict)` returning
   `[B, n_action_steps, action_dim]`; training also needs `set_normalizer()` and
   `compute_loss()`.
-- `test/mean_score` currently aggregates the maximum reset-derived reward.
-  Treat it as a smoke signal until a verified task success signal such as
-  `info["successes"]` is logged and used for benchmark comparisons.
+- **ManiFeel nine-task benchmark reporting:** use `test/mean_score`, **not**
+  `test/success_rate`. The official runner averages each environment's maximum
+  reward; its wrapper sets `reward = reset`. All nine pinned tasks set reset
+  from `_check_success()` or timeout at 100000 steps, so in the 500-step runs
+  `mean_score` equals the fraction of environments that reached simulator
+  success. The local unit runner's additional `test/success_rate` uses only
+  the final info window and can undercount; the official ManiFeel runner does
+  not publish this field. Do not describe `mean_score` as merely a smoke
+  signal or a bug for these runs, or use the old 10-env info-based results as
+  paper-comparable scores. Canonical checkpoint values and protocol caveats:
+  `docs/manifeel_benchmark_results.md`.
+- The selected Power Plug row in that nine-task table is
+  `checkpoints/0926/dp_power_plug_hyper_resnet_fusion_batch8_ep400_seed42/checkpoints/latest_epoch100.ckpt`,
+  with `test/mean_score=0.66` (33/50). It uses `use_fusion=true` and
+  `use_fusion_hypernet=false`, matching the eight other HyperResNet tasks;
+  distinguish it from `checkpoints/0929ours/fusionhyper/latest_epoch300.ckpt`
+  (extra fusion HyperNet, 0.56) and
+  `checkpoints/batch8_tactile/Film_Fusion/latest_epoch200.ckpt` (CLIP/Sparsh
+  FiLM, 0.08). Never mix these models' checkpoints or scores.

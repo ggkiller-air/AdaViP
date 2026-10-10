@@ -77,9 +77,20 @@ def main() -> None:
         ]
         if args.test_start_seed is not None:
             command.extend(["--test-start-seed", str(args.test_start_seed)])
-        subprocess.run(command, cwd=manifeel_root, check=True)
-
         task_log_path = task_output_dir / "eval_log.json"
+        completed = subprocess.run(command, cwd=manifeel_root, check=False)
+        teardown_statuses = {-11, 139}
+        if completed.returncode != 0 and (
+            completed.returncode not in teardown_statuses
+            or not task_log_path.is_file()
+        ):
+            raise subprocess.CalledProcessError(completed.returncode, command)
+        if completed.returncode != 0:
+            print(
+                "ManiFeel exited after writing its result "
+                f"(status={completed.returncode}); accepting {task_log_path}",
+                file=sys.stderr,
+            )
         task_log = json.loads(task_log_path.read_text())
         prefix = f"test/{spec.task_id}/"
         combined_log.update(
