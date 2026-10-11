@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 from adavip.manifeel.eval_config import (
     DEVICE_RUNNER_TARGET,
     FILM_RUNNER_TARGET,
+    HYPER_RESNET_ENCODER_TARGET,
     configure_single_task_evaluation,
 )
 
@@ -94,6 +95,50 @@ def test_baseline_checkpoint_keeps_device_aware_runner() -> None:
     assert cfg.task.env_runner._target_ == DEVICE_RUNNER_TARGET
     assert cfg.task.env_runner.device == "cuda:4"
     assert cfg.policy.obs_encoder.clip_encoder.checkpoint_path == "/missing/clip/RN50.pt"
+    assert "vision_key" not in cfg.policy.obs_encoder
+
+
+@pytest.mark.parametrize("vision_key", ["wrist", "front"])
+def test_hyper_resnet_infers_saved_vision_key(vision_key: str) -> None:
+    cfg = _checkpoint_config("manifeel.env_runner.vistac_pih_runner_unit.ManifeelRunner")
+    cfg.policy.obs_encoder = {
+        "_target_": HYPER_RESNET_ENCODER_TARGET,
+        "shape_meta": {"obs": {
+            vision_key: {"type": "rgb", "shape": [3, 256, 256]},
+            "right_tactile_camera_taxim": {"type": "rgb", "shape": [3, 256, 256]},
+            "state": {"type": "low_dim", "shape": [7]},
+        }},
+    }
+    OmegaConf.set_struct(cfg, True)
+    _configure(cfg)
+    assert cfg.policy.obs_encoder.vision_key == vision_key
+    assert set(cfg.policy.obs_encoder.shape_meta.obs) == {
+        vision_key, "right_tactile_camera_taxim", "state",
+    }
+
+
+def test_hyper_resnet_preserves_explicit_vision_key() -> None:
+    cfg = _checkpoint_config("manifeel.env_runner.vistac_pih_runner_unit.ManifeelRunner")
+    cfg.policy.obs_encoder = {
+        "_target_": HYPER_RESNET_ENCODER_TARGET,
+        "vision_key": "front",
+    }
+    _configure(cfg)
+    assert cfg.policy.obs_encoder.vision_key == "front"
+
+
+def test_hyper_resnet_rejects_ambiguous_vision_keys() -> None:
+    cfg = _checkpoint_config("manifeel.env_runner.vistac_pih_runner_unit.ManifeelRunner")
+    cfg.policy.obs_encoder = {
+        "_target_": HYPER_RESNET_ENCODER_TARGET,
+        "shape_meta": {"obs": {
+            "front": {"type": "rgb"},
+            "wrist": {"type": "rgb"},
+            "right_tactile_camera_taxim": {"type": "rgb"},
+        }},
+    }
+    with pytest.raises(ValueError, match="unique HyperResNet vision key"):
+        _configure(cfg)
 
 
 def test_film_runner_selects_physical_device_adapter(tmp_path, monkeypatch) -> None:

@@ -10,6 +10,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 
 FILM_RUNNER_TARGET = "adavip.manifeel.film_fusion_runner.FilmFusionRunner"
 DEVICE_RUNNER_TARGET = "adavip.manifeel.device_runner.DeviceAwareManifeelRunner"
+HYPER_RESNET_ENCODER_TARGET = "adavip.manifeel.hyper_resnet_obs_encoder.HyperResNetObsEncoder"
 
 
 def configure_single_task_evaluation(
@@ -21,8 +22,9 @@ def configure_single_task_evaluation(
     max_steps: int,
     test_start_seed: int,
 ) -> None:
-    """Set rollout options and relocate frozen assets embedded in a checkpoint."""
+    """Set rollout options and restore saved observation keys and asset paths."""
     with open_dict(cfg):
+        _configure_hyper_resnet_vision_key(cfg)
         if cfg.task.env_runner._target_ == FILM_RUNNER_TARGET:
             _configure_film_assets(cfg)
         else:
@@ -32,6 +34,23 @@ def configure_single_task_evaluation(
         cfg.task.env_runner.n_test_vis = n_test_vis
         cfg.task.env_runner.max_steps = max_steps
         cfg.task.env_runner.test_start_seed = test_start_seed
+
+
+def _configure_hyper_resnet_vision_key(cfg: DictConfig) -> None:
+    if OmegaConf.select(cfg, "policy.obs_encoder._target_") != HYPER_RESNET_ENCODER_TARGET:
+        return
+    encoder = cfg.policy.obs_encoder
+    if "vision_key" in encoder:
+        return
+    tactile_key = encoder.get("tactile_key", "right_tactile_camera_taxim")
+    observations = encoder.shape_meta.obs
+    vision_keys = [
+        key for key, metadata in observations.items()
+        if metadata.get("type", "low_dim") == "rgb" and key != tactile_key
+    ]
+    if len(vision_keys) != 1:
+        raise ValueError(f"Cannot infer a unique HyperResNet vision key: {vision_keys}")
+    encoder.vision_key = vision_keys[0]
 
 
 def _configure_film_assets(cfg: DictConfig) -> None:

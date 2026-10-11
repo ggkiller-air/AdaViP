@@ -100,6 +100,7 @@ def main() -> None:
         max_steps=args.max_steps,
         test_start_seed=args.test_start_seed,
     )
+    OmegaConf.save(cfg, args.output_dir / "runtime_config.yaml")
 
     workspace_class = hydra.utils.get_class(cfg._target_)
     workspace = workspace_class(cfg, output_dir=str(args.output_dir))
