@@ -37,11 +37,14 @@ class RolloutRecorder:
         self.env = env
         self.output_dir = output_dir
         self.actions: list[np.ndarray] = []
+        self.rewards: list[np.ndarray] = []
         self.success: list[np.ndarray] = []
         self.states: list[np.ndarray] = []
         self.task_states: dict[str, list[np.ndarray]] = {
-            key: [] for key in ("socket_pos", "plug_pos", "fingertip_midpoint_pos")
+            key: [] for key in ("socket_pos", "plug_pos", "fingertip_midpoint_pos", "plug_quat",
+                                "socket_quat", "keypoints_plug", "keypoints_socket", "plug_socket_force")
         }
+        self.initial_task_state: dict[str, np.ndarray] = {}
         self.initial_state: np.ndarray | None = None
 
     def __getattr__(self, name: str) -> Any:
@@ -52,30 +55,58 @@ class RolloutRecorder:
         observation = self.env.reset(**kwargs)
         if self.initial_state is None and "state" in observation:
             self.initial_state = _array(observation["state"]).copy()
+            self.initial_task_state = self._task_snapshot()
         return observation
+
+    def _task_snapshot(self) -> dict[str, np.ndarray]:
+        task = getattr(self.env, "envs", None)
+        if task is None:
+            return {}
+        values = {key: _array(getattr(task, key)).copy()
+                  for key in self.task_states if hasattr(task, key)}
+        if all(hasattr(task, key) for key in ("contact_force_pairwise", "plug_body_id_env", "socket_body_id_env")):
+            force = task.contact_force_pairwise[:, task.plug_body_id_env, task.socket_body_id_env]
+            values["plug_socket_force"] = _array(force).copy()
+        return values
 
     def step(self, action: np.ndarray) -> tuple[Any, Any, Any, Any]:
         """Record each action as actually executed by the simulator."""
         observation, reward, done, info = self.env.step(action)
         self.actions.append(_array(action).copy())
+        self.rewards.append(_array(reward).copy())
         if "success" in info:
             self.success.append(_array(info["success"]).copy())
         if "state" in observation:
             self.states.append(_array(observation["state"]).copy())
-        task = getattr(self.env, "envs", None)
-        if task is not None:
-            for key, values in self.task_states.items():
-                if hasattr(task, key):
-                    values.append(_array(getattr(task, key)).copy())
+        for key, value in self._task_snapshot().items():
+            self.task_states[key].append(value)
         return observation, reward, done, info
+
+    def current_contact_phase(self, phase: str, threshold: float = 0.001) -> np.ndarray:
+        """Select current policy inputs using only already-executed contact and reward history."""
+        from adavip.manifeel.contact_probe import contact_phase_masks
+
+        if phase not in ("pre_contact", "post_contact_pre_success"):
+            raise ValueError(f"unsupported contact phase: {phase}")
+        initial_force = self.initial_task_state.get("plug_socket_force")
+        if initial_force is None:
+            raise ValueError("phase interventions require recorded initial plug/socket contact force")
+        environments = len(initial_force)
+        rewards = np.stack(self.rewards) if self.rewards else np.zeros((0, environments))
+        forces = self.task_states["plug_socket_force"]
+        force = np.stack(forces) if forces else np.zeros((0, environments, 3))
+        masks = contact_phase_masks(rewards, force, initial_force, np.asarray([len(rewards)]), threshold)
+        return masks[phase][0]
 
     def save(self) -> dict[str, Any]:
         """Persist compact per-step traces and return per-environment outcomes."""
         arrays: dict[str, np.ndarray] = {
             "executed_actions": np.stack(self.actions),
+            "reward_by_step": np.stack(self.rewards),
         }
         if self.initial_state is not None:
             arrays["initial_state"] = self.initial_state
+        arrays.update({f"initial_{key}": value for key, value in self.initial_task_state.items()})
         if self.states:
             arrays["ee_pose"] = np.stack(self.states)
         if self.success:

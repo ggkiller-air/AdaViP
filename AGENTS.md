@@ -34,8 +34,9 @@
   and use persistent output directories under `/data/wangzihao/`.
 - Before starting GPU-dependent work, inspect the current GPU
   processes, report the GPU model, memory, utilization, and relevant running
-  jobs to the user, and wait for confirmation before launching training or
-  evaluation.
+  jobs to the user. GPU evaluations on this test server do not require repeated
+  confirmation; use available GPUs and leave unrelated jobs untouched. Local
+  training remains prohibited unless the user explicitly changes that policy.
 - A training process running only to keep a GPU busy may be terminated when
   the GPU is needed for the requested work; note the termination in the
   development log.

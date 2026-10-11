@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
+import gc
 import json
 import os
 from pathlib import Path
@@ -40,6 +42,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--diagnostic", action="store_true")
     parser.add_argument("--attention-trace", action="store_true",
                         help="record per-head fusion weights and rollout diagnostics")
+    parser.add_argument("--hypernet-trace", action="store_true",
+                        help="record HyperNet modulation, fusion attention and physical rollout state")
+    parser.add_argument("--hypernet-intervention", choices=("none", "mean", "zero"), default="none")
+    parser.add_argument("--modulation-trace", type=Path,
+                        help="independent demonstration calibration trace for fixed mean modulation")
+    parser.add_argument("--hypernet-context-intervention", choices=("none", "vision", "tactile", "state"), default="none")
+    parser.add_argument("--context-calibration-trace", type=Path,
+                        help="independent demo feature trace for freezing one HyperNet context slice")
+    parser.add_argument("--intervention-phase", choices=("all", "pre_contact", "post_contact_pre_success"), default="all")
     parser.add_argument("--ablation", choices=("none", "no_film", "no_attention", "no_tactile"),
                         default="none")
     parser.add_argument("--canonicalize-quaternion", action="store_true")
@@ -56,6 +67,10 @@ def json_value(value: object) -> object:
 def main() -> None:
     """Load the saved Hydra config and run its task on one physical GPU."""
     args = parse_args()
+    if args.hypernet_intervention != "none" and args.hypernet_context_intervention != "none":
+        raise ValueError("output and context interventions must be evaluated separately")
+    if args.intervention_phase != "all" and args.hypernet_intervention == args.hypernet_context_intervention == "none":
+        raise ValueError("phase selection requires a modulation or context intervention")
     if not args.device.startswith("cuda:"):
         raise ValueError(f"device must be cuda:<physical-index>, got {args.device!r}")
     if args.output_dir.exists():
@@ -94,6 +109,23 @@ def main() -> None:
     policy = workspace.ema_model if cfg.training.use_ema else workspace.model
     policy.to(torch.device(args.device))
     policy.eval()
+    del payload, workspace
+    gc.collect()
+    intervention_stack = ExitStack()
+    replacement = None
+    if args.hypernet_intervention != "none":
+        from adavip.manifeel.action_probe import override_hypernet
+
+        if not hasattr(policy.obs_encoder, "hypernet"):
+            raise ValueError("modulation interventions require a HyperResNet checkpoint")
+        if args.hypernet_intervention == "mean":
+            if args.modulation_trace is None:
+                raise ValueError("mean modulation requires --modulation-trace")
+            with np.load(args.modulation_trace, allow_pickle=False) as trace:
+                bounded = trace["calibration_mean_gamma_beta"]
+            replacement = torch.from_numpy(np.arctanh(np.clip(bounded, -1 + 1e-6, 1 - 1e-6))).to(policy.device)
+        else:
+            replacement = torch.zeros(1, policy.obs_encoder.hypernet[-1].out_features, device=policy.device)
 
     runner = hydra.utils.instantiate(
         cfg.task.env_runner,
@@ -101,19 +133,59 @@ def main() -> None:
     )
     rollout_recorder = None
     policy_recorder = None
-    if args.diagnostic or args.attention_trace or args.ablation != "none" or args.canonicalize_quaternion:
+    if args.diagnostic or args.attention_trace or args.hypernet_trace or args.hypernet_intervention != "none" or args.hypernet_context_intervention != "none" or args.ablation != "none" or args.canonicalize_quaternion:
         from adavip.manifeel.diagnostics import attach_diagnostics
 
         rollout_recorder, policy_recorder = attach_diagnostics(
             runner, policy, args.output_dir, ablation=args.ablation,
             canonicalize_quaternion=args.canonicalize_quaternion)
+    phase_selections = []
+    environment_selector = None
+    if args.intervention_phase != "all":
+        def select_phase() -> np.ndarray:
+            selected = rollout_recorder.current_contact_phase(args.intervention_phase)
+            phase_selections.append(selected.copy())
+            return selected
+
+        environment_selector = select_phase
+    if replacement is not None:
+        intervention_stack.enter_context(override_hypernet(policy.obs_encoder, replacement,
+            environment_selector=environment_selector, n_obs_steps=policy.n_obs_steps))
+    if args.hypernet_context_intervention != "none":
+        from adavip.manifeel.action_probe import override_hypernet_context
+
+        if not hasattr(policy.obs_encoder, "hypernet") or args.context_calibration_trace is None:
+            raise ValueError("context interventions require HyperResNet and a separate demonstration calibration trace")
+        with np.load(args.context_calibration_trace, allow_pickle=False) as trace:
+            features = torch.from_numpy(trace["base_features"])
+            state = torch.from_numpy(trace["normalized_state"])
+        if features.ndim != 3 or state.ndim != 2:
+            raise ValueError("context calibration requires independent demonstration frames, not rollout histories")
+        width = features.shape[-1]
+        reference = torch.cat((torch.nn.functional.layer_norm(features[:, 0], (width,)),
+                               torch.nn.functional.layer_norm(features[:, 1], (width,)), state), dim=-1).mean(dim=0, keepdim=True)
+        intervention_stack.enter_context(override_hypernet_context(policy.obs_encoder, reference,
+            args.hypernet_context_intervention, environment_selector=environment_selector, n_obs_steps=policy.n_obs_steps))
     attention_recorder = None
-    if args.attention_trace:
+    if args.attention_trace and not args.hypernet_trace:
         from adavip.manifeel.attention_trace import AttentionTraceRecorder
 
         attention_recorder = AttentionTraceRecorder(policy, args.output_dir)
+    hypernet_recorder = None
+    if args.hypernet_trace:
+        from adavip.manifeel.hypernet_probe import HyperNetRolloutRecorder
+
+        hypernet_recorder = HyperNetRolloutRecorder(policy, args.output_dir)
     try:
         runner_log = runner.run(policy)
+        runner_log["diagnostics/hypernet_intervention"] = args.hypernet_intervention
+        runner_log["diagnostics/hypernet_context_intervention"] = args.hypernet_context_intervention
+        runner_log["diagnostics/intervention_phase"] = args.intervention_phase
+        if phase_selections:
+            np.savez_compressed(args.output_dir / "intervention_phase_masks.npz", selected=np.stack(phase_selections))
+            runner_log["diagnostics/intervened_environments_by_chunk"] = [int(selected.sum()) for selected in phase_selections]
+        if hypernet_recorder is not None:
+            runner_log["diagnostics/hypernet"] = hypernet_recorder.save()
         if attention_recorder is not None:
             runner_log["diagnostics/attention"] = attention_recorder.save()
         if rollout_recorder is not None and policy_recorder is not None:
@@ -124,8 +196,11 @@ def main() -> None:
             if not np.isclose(rollout_summary["success_rate"], runner_log["test/success_rate"]):
                 raise ValueError("recorded per-environment success disagrees with runner success rate")
     finally:
+        if hypernet_recorder is not None:
+            hypernet_recorder.close()
         if attention_recorder is not None:
             attention_recorder.close()
+        intervention_stack.close()
         runner.env.close()
 
     json_log = {

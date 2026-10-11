@@ -80,6 +80,28 @@ def test_rollout_recorder_persists_per_environment_success(tmp_path):
         assert trace["initial_state"].shape == (2, 7)
 
 
+def test_rollout_records_pairwise_target_contact_without_changing_observations(tmp_path):
+    """Target contact is distinct from finger contact and is read without simulator edits."""
+    from types import SimpleNamespace
+
+    env = StubEnv()
+    force = torch.zeros(2, 3, 3, 3)
+    force[:, 0, 1, 2] = 2.0
+    env.envs = SimpleNamespace(contact_force_pairwise=force, plug_body_id_env=0,
+                               socket_body_id_env=1, plug_pos=torch.zeros(2, 3),
+                               keypoints_plug=torch.zeros(2, 4, 3),
+                               keypoints_socket=torch.ones(2, 4, 3))
+    recorder = RolloutRecorder(env, tmp_path)
+    recorder.reset()
+    recorder.step(np.zeros((2, 6)))
+    recorder.save()
+    with np.load(tmp_path / "rollout_trace.npz") as trace:
+        np.testing.assert_array_equal(trace["plug_socket_force"][0, :, 2], [2, 2])
+        assert trace["keypoints_plug"].shape == (1, 2, 4, 3)
+        assert trace["initial_plug_socket_force"].shape == (2, 3)
+        assert trace["reward_by_step"].shape == (1, 2)
+
+
 def test_policy_recorder_captures_inputs_features_and_chunks(tmp_path):
     """Baseline diagnostics should capture raw camera values and feature norms."""
     policy = StubPolicy()
@@ -210,3 +232,15 @@ def test_quaternion_canonicalization_preserves_rotation(tmp_path):
     torch.testing.assert_close(observations["state"][0, 0, 3:7],
                                torch.tensor([-0.9, 0.1, -0.2, 0.3]))
     assert summary["quaternion_sign_corrections"] == 2
+def test_contact_phase_selection_uses_only_executed_history(tmp_path) -> None:
+    """Phase-gated intervention must not use future contact or post-success samples."""
+    recorder = RolloutRecorder(object(), tmp_path)
+    recorder.initial_task_state["plug_socket_force"] = np.zeros((2, 3))
+    np.testing.assert_array_equal(recorder.current_contact_phase("pre_contact"), [True, True])
+    recorder.rewards.append(np.zeros(2))
+    recorder.task_states["plug_socket_force"].append(np.array([[1., 0, 0], [0, 0, 0]]))
+    np.testing.assert_array_equal(recorder.current_contact_phase("post_contact_pre_success"), [True, False])
+    recorder.rewards.append(np.array([1, 0]))
+    recorder.task_states["plug_socket_force"].append(np.zeros((2, 3)))
+    np.testing.assert_array_equal(recorder.current_contact_phase("post_contact_pre_success"), [False, False])
+    np.testing.assert_array_equal(recorder.current_contact_phase("pre_contact"), [False, True])
