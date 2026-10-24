@@ -48,7 +48,26 @@ else
     echo "Unknown STAGE2_MODE=${STAGE2_MODE}" >&2
     exit 2
 fi
-"${MANIFEEL_PYTHON}" -u scripts/manifeel/train_stage2_t2.py "${arguments[@]}"
+trainer_pid=""
+forward_stop() {
+    if [[ -n "${trainer_pid}" ]] && kill -0 "${trainer_pid}" 2>/dev/null; then
+        kill -USR1 "${trainer_pid}"
+    fi
+}
+trap forward_stop USR1 TERM
+"${MANIFEEL_PYTHON}" -u scripts/manifeel/train_stage2_t2.py "${arguments[@]}" &
+trainer_pid=$!
+while true; do
+    if wait "${trainer_pid}"; then
+        break
+    else
+        status=$?
+    fi
+    if kill -0 "${trainer_pid}" 2>/dev/null; then
+        continue
+    fi
+    exit "${status}"
+done
 if [[ "${STAGE2_MODE}" == full && -f "${STAGE2_OUTPUT}/SAFE_STOP.json" && ! -f "${STAGE2_OUTPUT}/COMPLETE.json" ]]; then
     rm -f -- "${STAGE2_OUTPUT}/SAFE_STOP.json"
     sbatch --dependency="afterok:${SLURM_JOB_ID}" --export="ALL,STAGE2_SOURCE=${STAGE2_SOURCE},STAGE2_OUTPUT=${STAGE2_OUTPUT},STAGE2_MODE=full,STAGE2_RESUME=${STAGE2_OUTPUT}/checkpoints/latest.ckpt" "$0"
