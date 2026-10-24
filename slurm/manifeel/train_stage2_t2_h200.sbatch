@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=adavip_stage2_t2
-#SBATCH --partition=gpu
+#SBATCH --partition=gpux
 #SBATCH --gres=gpu:NVIDIAH200:1
-#SBATCH --exclude=server09
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=384G
-#SBATCH --time=4-00:00:00
+#SBATCH --time=2-00:00:00
+#SBATCH --requeue
 #SBATCH --signal=B:USR1@300
 #SBATCH --output=/data/wangzihao/outputs/manifeel/slurm/stage2_t2_%j.out
 #SBATCH --error=/data/wangzihao/outputs/manifeel/slurm/stage2_t2_%j.err
@@ -16,6 +16,11 @@ set -euo pipefail
 : "${STAGE2_SOURCE:?Set immutable Stage 2 source directory}"
 : "${STAGE2_OUTPUT:?Set persistent Stage 2 output directory}"
 : "${STAGE2_MODE:?Set preflight or full}"
+
+if [[ "${STAGE2_MODE}" == combined && -f "${STAGE2_OUTPUT}/checkpoints/latest.ckpt" ]]; then
+    STAGE2_MODE=full
+    STAGE2_RESUME="${STAGE2_OUTPUT}/checkpoints/latest.ckpt"
+fi
 
 cd "${STAGE2_SOURCE}"
 source scripts/manifeel/common.sh
