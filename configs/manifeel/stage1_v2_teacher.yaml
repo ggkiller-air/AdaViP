@@ -1,0 +1,87 @@
+_target_: adavip.manifeel.stage1_v2_training.Stage1V2Workspace
+
+output_dir: ${oc.env:MANIFEEL_STAGE1_V2_OUTPUT_ROOT,outputs/manifeel_stage1_v2_teacher_batch8_ep400_seed42}
+
+dataset:
+  _target_: adavip.manifeel.stage1_v2_dataset.Stage1V2ManiFeelDataset
+  shape_meta:
+    obs:
+      front: {shape: [3, 256, 256], type: rgb}
+      side: {shape: [3, 256, 256], type: rgb}
+      wrist: {shape: [3, 256, 256], type: rgb}
+      left_tactile_camera_taxim: {shape: [3, 320, 240], type: rgb}
+      right_tactile_camera_taxim: {shape: [3, 320, 240], type: rgb}
+      state: {shape: [7], type: low_dim}
+      task_embedding: {shape: [512], type: low_dim}
+    action: {shape: [7]}
+  dataset_root: ${oc.env:MANIFEEL_DATA_ROOT,/data/wangzihao/datasets/manifeel}
+  task_embedding_path: ${oc.env:MANIFEEL_TASK_EMBEDDING_PATH,/data/wangzihao/outputs/manifeel/task_embeddings/clip_vit_b32_9task.npz}
+  task_specs: null
+  horizon: 16
+  n_obs_steps: 6
+  n_action_steps: 8
+  val_ratio: 0.02
+  max_train_episodes: null
+  all_episodes: true
+  seed: 42
+  dataset_version: ${oc.env:MANIFEEL_DATASET_VERSION,manifeel_9tasks_400demos}
+  source_frequency_hz: null
+  decoded_cache_dir: ${oc.env:MANIFEEL_DECODED_CACHE_DIR,null}
+  decoded_cache_mode: ${oc.env:MANIFEEL_DECODED_CACHE_MODE,mmap}
+
+policy:
+  _target_: adavip.manifeel.stage1_v2_policy.Stage1V2TeacherPolicy
+  shape_meta: ${dataset.shape_meta}
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    variance_type: fixed_small
+    clip_sample: true
+    prediction_type: epsilon
+  horizon: 16
+  n_obs_steps: 6
+  n_action_steps: 8
+  num_inference_steps: 100
+  token_dim: 256
+  image_feature_dim: 512
+  action_history_steps: 8
+  future_ema_decay: 0.999
+  full_input_probability: 0.8
+  diffusion_step_embed_dim: 128
+  down_dims: [512, 1024, 2048]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 1.0e-4
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-6
+
+dataloader:
+  batch_size: 8
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+
+training:
+  device: cuda:0
+  seed: 42
+  normalizer_mode: limits
+  num_epochs: 400
+  resume: null
+  grad_clip_norm: 1.0
+  future_gradient_fraction: 0.25
+  lr_warmup_steps: 500
+  gradient_audit_every: 500
+  log_every: 20
+  checkpoint_every_steps: 1000
+
+runtime:
+  preflight_report: ${oc.env:MANIFEEL_STAGE1_V2_PREFLIGHT_REPORT,outputs/manifeel_stage1_v2_preflight/report.json}
