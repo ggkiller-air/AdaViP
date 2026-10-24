@@ -10,7 +10,9 @@ import torch
 
 from adavip.manifeel.stage2_mlp_policy import Stage2MlpPolicy
 from scripts.manifeel.eval_stage2_mlp_utility import per_dimension_correlation
-from scripts.manifeel.train_stage2_mlp_t2 import set_stage_trainability, utility_diagnostics
+from scripts.manifeel.train_stage2_mlp_t2 import (
+    restore_policy_state, set_stage_trainability, utility_diagnostics,
+)
 from test_stage2_policy import make_batch, make_policy
 
 
@@ -94,7 +96,7 @@ def test_mlp_diagnostics_and_checkpoint_round_trip() -> None:
     torch.save(policy.state_dict(), stream)
     stream.seek(0)
     restored, _ = make_mlp_policy()
-    restored.load_state_dict(torch.load(stream, weights_only=True), strict=True)
+    restore_policy_state(restored, torch.load(stream, weights_only=True), torch.device("cpu"))
     for name, value in policy.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[name], value)
 

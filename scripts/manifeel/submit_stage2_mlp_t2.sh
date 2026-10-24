@@ -28,7 +28,7 @@ for partition in gpu gpux; do
         options+=(--dependency="${STAGE2_MLP_DEPENDENCY}")
     fi
     export_spec="ALL,STAGE2_MLP_SOURCE=${STAGE2_MLP_SOURCE},STAGE2_MLP_OUTPUT=${STAGE2_MLP_OUTPUT},STAGE2_MLP_MODE=${STAGE2_MLP_MODE},STAGE2_MLP_WAVE=${wave}"
-    if [[ "${STAGE2_MLP_MODE}" == full ]]; then
+    if [[ "${STAGE2_MLP_MODE}" == full && -f "${STAGE2_MLP_OUTPUT}/checkpoints/latest.ckpt" ]]; then
         export_spec+=",STAGE2_MLP_RESUME=${STAGE2_MLP_OUTPUT}/checkpoints/latest.ckpt"
     fi
     job_id="$(sbatch "${options[@]}" --export="${export_spec}" "${script}")"
