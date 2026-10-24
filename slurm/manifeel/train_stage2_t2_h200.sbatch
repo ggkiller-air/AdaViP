@@ -16,6 +16,7 @@ set -euo pipefail
 : "${STAGE2_SOURCE:?Set immutable Stage 2 source directory}"
 : "${STAGE2_OUTPUT:?Set persistent Stage 2 output directory}"
 : "${STAGE2_MODE:?Set preflight or full}"
+: "${STAGE2_WAVE:?Set submission wave identifier}"
 
 if [[ "${STAGE2_MODE}" == combined && -f "${STAGE2_OUTPUT}/checkpoints/latest.ckpt" ]]; then
     STAGE2_MODE=full
@@ -30,6 +31,27 @@ export MKL_NUM_THREADS=8
 export TMPDIR="/dev/shm/adavip_stage2_${SLURM_JOB_ID}"
 mkdir -p "${TMPDIR}" "${STAGE2_OUTPUT}"
 trap 'rm -rf -- "${TMPDIR}"' EXIT
+
+# Competing gpu/gpux requests share one run; only the first allocation trains.
+exec 9>"${STAGE2_OUTPUT}/training.lock"
+if ! flock -n 9; then
+    echo "Another Transformer allocation owns the training lock; exiting."
+    exit 0
+fi
+wave_file="${STAGE2_OUTPUT}/queue/${STAGE2_WAVE}.jobs"
+for ((attempt=0; attempt<30; attempt++)); do
+    if [[ -f "${wave_file}" ]]; then
+        break
+    fi
+    sleep 1
+done
+if [[ -f "${wave_file}" ]]; then
+    while read -r queued_id; do
+        if [[ "${queued_id}" != "${SLURM_JOB_ID}" ]]; then
+            scancel "${queued_id}" 2>/dev/null || true
+        fi
+    done < "${wave_file}"
+fi
 
 print_manifeel_context
 nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu --format=csv,noheader
@@ -78,5 +100,6 @@ done
 if [[ "${STAGE2_MODE}" == full || "${STAGE2_MODE}" == combined ]] &&
    [[ -f "${STAGE2_OUTPUT}/SAFE_STOP.json" && ! -f "${STAGE2_OUTPUT}/COMPLETE.json" ]]; then
     rm -f -- "${STAGE2_OUTPUT}/SAFE_STOP.json"
-    sbatch --dependency="afterok:${SLURM_JOB_ID}" --export="ALL,STAGE2_SOURCE=${STAGE2_SOURCE},STAGE2_OUTPUT=${STAGE2_OUTPUT},STAGE2_MODE=full,STAGE2_RESUME=${STAGE2_OUTPUT}/checkpoints/latest.ckpt" "$0"
+    STAGE2_MODE=full STAGE2_DEPENDENCY="afterok:${SLURM_JOB_ID}" \
+        bash "${STAGE2_SOURCE}/scripts/manifeel/submit_stage2_t2.sh"
 fi

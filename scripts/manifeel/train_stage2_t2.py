@@ -139,6 +139,16 @@ def update_ema(ema: Stage2Policy, policy: Stage2Policy, decay: float) -> None:
             target.copy_(source)
 
 
+def restore_policy_state(policy: Stage2Policy, state: dict, device: torch.device) -> None:
+    """Restore a policy and keep the custom Normalizer on the model device."""
+    policy.load_state_dict(state, strict=True)
+    # Diffusion Policy's Normalizer rebuilds its ParameterDict from the state
+    # tensors, so loading a CPU checkpoint after policy.to(cuda) moves it to CPU.
+    policy.normalizer.to(device)
+    if any(parameter.device != device for parameter in policy.normalizer.parameters()):
+        raise RuntimeError("Restored Normalizer remains on the wrong device")
+
+
 def load_teacher(path: str, label_directory: str) -> object:
     """Read pinned E500 EMA and compare all 48 saved Normalizer tensors."""
     workspace = FullSensorWorkspace.create_from_checkpoint(path, map_location="cpu")
@@ -240,8 +250,8 @@ def main() -> None:
         saved = torch.load(args.resume, map_location="cpu", pickle_module=dill)
         if saved["contract_hash"] != contract_hash:
             raise ValueError("Resume contract differs from the original Stage 2 run")
-        policy.load_state_dict(saved["model"], strict=True)
-        ema.load_state_dict(saved["ema"], strict=True)
+        restore_policy_state(policy, saved["model"], device)
+        restore_policy_state(ema, saved["ema"], device)
         optimizer.load_state_dict(saved["optimizer"])
         scheduler.load_state_dict(saved["scheduler"])
         epoch, batch_cursor, global_step = saved["epoch"], saved["batch_cursor"], saved["global_step"]
@@ -359,8 +369,8 @@ def main() -> None:
                             report["data_wait_seconds"] / max(1e-6, time.monotonic() - start) > 0.75 or
                             report["gpu_peak_bytes"] > 0.9 * torch.cuda.get_device_properties(0).total_memory):
                         raise RuntimeError("Stage 2 preflight throughput or memory gate failed")
-                    policy.load_state_dict(initial_model, strict=True)
-                    ema.load_state_dict(initial_model, strict=True)
+                    restore_policy_state(policy, initial_model, device)
+                    restore_policy_state(ema, initial_model, device)
                     optimizer, scheduler = make_optimizer_scheduler(policy, steps_per_epoch, args.epochs)
                     restore_rng(initial_rng)
                     del initial_model

@@ -11,7 +11,8 @@ from adavip.manifeel.full_sensor_obs_encoder import FullSensorObsEncoder
 from adavip.manifeel.full_sensor_schema import IMAGE_KEYS, make_shape_meta
 from adavip.manifeel.stage2_policy import Stage2Policy
 from scripts.manifeel.train_stage2_t2 import (
-    atomic_checkpoint, make_optimizer_scheduler, set_stage_trainability, stage_for_epoch,
+    atomic_checkpoint, make_optimizer_scheduler, restore_policy_state,
+    set_stage_trainability, stage_for_epoch,
 )
 from diffusion_policy.common.normalize_util import get_image_range_normalizer
 from diffusion_policy.model.common.normalizer import LinearNormalizer, SingleFieldLinearNormalizer
@@ -132,7 +133,7 @@ def test_stage2_stage_gates_and_optimizer_checkpoint(tmp_path) -> None:
                              "scheduler": scheduler.state_dict(), "utility_rms": policy.utility_rms})
     checkpoint = torch.load(path, weights_only=False)
     restored = make_policy()
-    restored.load_state_dict(checkpoint["model"], strict=True)
+    restore_policy_state(restored, checkpoint["model"], torch.device("cpu"))
     restored_optimizer, restored_scheduler = make_optimizer_scheduler(restored, 2)
     restored_optimizer.load_state_dict(checkpoint["optimizer"])
     restored_scheduler.load_state_dict(checkpoint["scheduler"])
