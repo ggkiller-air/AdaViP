@@ -39,7 +39,10 @@ if ! flock -n 9; then
     exit 0
 fi
 wave_file="${STAGE2_MLP_OUTPUT}/queue/${STAGE2_MLP_WAVE}.jobs"
-for ((attempt=0; attempt<30 && ! -f "${wave_file}"; attempt++)); do
+for ((attempt=0; attempt<30; attempt++)); do
+    if [[ -f "${wave_file}" ]]; then
+        break
+    fi
     sleep 1
 done
 if [[ -f "${wave_file}" ]]; then
