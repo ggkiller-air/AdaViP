@@ -99,6 +99,15 @@ def gpu_status() -> dict[str, int]:
     return {"gpu_utilization_percent": utilization, "gpu_memory_mib": memory}
 
 
+def cgroup_memory_bytes() -> int | None:
+    """Report the job's charged RAM when the node exposes its cgroup counter."""
+    for name in ("/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"):
+        path = Path(name)
+        if path.is_file():
+            return int(path.read_text().strip())
+    return None
+
+
 def atomic_checkpoint(path: Path, payload: dict) -> None:
     """Replace only a complete checkpoint in the isolated Stage 2 directory."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -178,6 +187,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True)
     parser.add_argument("--resume")
     parser.add_argument("--preflight-steps", type=int, default=0)
+    parser.add_argument("--continue-after-preflight", action="store_true")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--epochs", type=int, default=600)
@@ -189,6 +199,8 @@ def main() -> None:
     args = parse_args()
     if args.batch_size != 32 or args.epochs != 600 or args.workers < 0:
         raise ValueError("Official Stage 2 protocol is batch32/600 epochs")
+    if args.continue_after_preflight and (args.preflight_steps < 7 or args.resume):
+        raise ValueError("Combined run needs at least seven preflight steps and no resume")
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1 or "H200" not in torch.cuda.get_device_name(0):
         raise RuntimeError("Stage 2 requires exactly one NVIDIA H200")
     signal.signal(signal.SIGUSR1, request_stop)
@@ -214,6 +226,9 @@ def main() -> None:
     ema = copy.deepcopy(policy).eval().requires_grad_(False)
     steps_per_epoch = math.ceil(len(dataset) / args.batch_size)
     optimizer, scheduler = make_optimizer_scheduler(policy, steps_per_epoch, args.epochs)
+    initial_model = ({key: value.detach().cpu().clone() for key, value in policy.state_dict().items()}
+                     if args.continue_after_preflight else None)
+    initial_rng = rng_state() if args.continue_after_preflight else None
     contract = {"teacher": str(Path(args.teacher).resolve()), "labels_sha256": dataset.store.manifest["sha256"],
                 "cache": str(Path(args.cache).resolve()),
                 "cache_config": str(Path(args.cache_config).resolve()), "batch_size": args.batch_size,
@@ -246,7 +261,8 @@ def main() -> None:
                       "steps_per_epoch": steps_per_epoch, "utility_rms": utility_rms.tolist(),
                       "next_epoch": epoch, "next_batch": batch_cursor,
                       "available_cpus": len(os.sched_getaffinity(0)), "workers": args.workers,
-                      "ram_peak_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}), flush=True)
+                      "ram_peak_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                      "cgroup_ram_bytes": cgroup_memory_bytes()}), flush=True)
     preflight_left = args.preflight_steps
     while epoch <= args.epochs:
         stage = stage_for_epoch(epoch)
@@ -269,6 +285,7 @@ def main() -> None:
         sums = torch.zeros(9, device=device, dtype=torch.float64)
         squares = torch.zeros(9, device=device, dtype=torch.float64)
         metric_count = 0
+        restart_after_preflight = False
         for batch in loader:
             data_wait_seconds += time.monotonic() - previous_end
             if preflight_left:
@@ -312,10 +329,12 @@ def main() -> None:
                           "samples_per_second": metric_count / max(1e-6, time.monotonic() - start),
                           "data_wait_seconds": data_wait_seconds,
                           "ram_peak_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                          "cgroup_ram_bytes": cgroup_memory_bytes(),
                           "gpu_allocated_bytes": torch.cuda.memory_allocated(),
                           "gpu_peak_bytes": torch.cuda.max_memory_allocated(),
                           "gpu_status": gpu_status() if global_step % 100 == 0 or preflight_left == 1 else None}
-                with (output / "metrics.jsonl").open("a") as stream:
+                metrics_file = "preflight_metrics.jsonl" if preflight_left else "metrics.jsonl"
+                with (output / metrics_file).open("a") as stream:
                     stream.write(json.dumps(record) + "\n")
                 print(json.dumps(record), flush=True)
             if preflight_left:
@@ -329,11 +348,27 @@ def main() -> None:
                               "gradient_norm": float(grad_norm),
                               "data_wait_seconds": data_wait_seconds,
                               "ram_peak_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                              "cgroup_ram_bytes": cgroup_memory_bytes(),
                               "gpu_peak_bytes": torch.cuda.max_memory_allocated(),
                               "samples_per_second": metric_count / max(1e-6, time.monotonic() - start)}
                     (output / "preflight_report.json").write_text(json.dumps(report, indent=2) + "\n")
                     print(json.dumps(report), flush=True)
-                    return
+                    if not args.continue_after_preflight:
+                        return
+                    if (report["samples_per_second"] < 20 or
+                            report["data_wait_seconds"] / max(1e-6, time.monotonic() - start) > 0.75 or
+                            report["gpu_peak_bytes"] > 0.9 * torch.cuda.get_device_properties(0).total_memory):
+                        raise RuntimeError("Stage 2 preflight throughput or memory gate failed")
+                    policy.load_state_dict(initial_model, strict=True)
+                    ema.load_state_dict(initial_model, strict=True)
+                    optimizer, scheduler = make_optimizer_scheduler(policy, steps_per_epoch, args.epochs)
+                    restore_rng(initial_rng)
+                    del initial_model
+                    initial_model = None
+                    epoch, batch_cursor, global_step = 1, 0, 0
+                    restart_after_preflight = True
+                    print(json.dumps({"event": "formal_start_after_preflight", "report": str(output / "preflight_report.json")}), flush=True)
+                    break
             if STOP_REQUESTED:
                 save("latest")
                 (output / "SAFE_STOP.json").write_text(json.dumps({"epoch": epoch,
@@ -343,6 +378,8 @@ def main() -> None:
                 return
             previous_end = time.monotonic()
         del loader
+        if restart_after_preflight:
+            continue
         completed = epoch
         epoch += 1
         batch_cursor = 0

@@ -140,3 +140,21 @@ def test_stage2_stage_gates_and_optimizer_checkpoint(tmp_path) -> None:
     for old, new in zip(policy.parameters(), restored.parameters()):
         torch.testing.assert_close(old, new)
     torch.testing.assert_close(checkpoint["utility_rms"], policy.utility_rms)
+
+
+def test_preflight_weights_can_reset_before_formal_training() -> None:
+    """Combined H200 allocation starts its formal optimizer from a clean seed."""
+    torch.manual_seed(11)
+    policy = make_policy()
+    baseline = {name: value.detach().cpu().clone() for name, value in policy.state_dict().items()}
+    optimizer, scheduler = make_optimizer_scheduler(policy, 2)
+    policy.training_losses(make_batch(), "B")["action_loss"].backward()
+    optimizer.step()
+    scheduler.step()
+    assert any(not torch.equal(value.cpu(), baseline[name]) for name, value in policy.state_dict().items())
+    policy.load_state_dict(baseline, strict=True)
+    fresh_optimizer, fresh_scheduler = make_optimizer_scheduler(policy, 2)
+    assert not fresh_optimizer.state
+    assert fresh_scheduler.last_epoch == 0
+    for name, value in policy.state_dict().items():
+        torch.testing.assert_close(value.cpu(), baseline[name])

@@ -40,6 +40,8 @@ arguments=(
 )
 if [[ "${STAGE2_MODE}" == preflight ]]; then
     arguments+=(--preflight-steps 100)
+elif [[ "${STAGE2_MODE}" == combined ]]; then
+    arguments+=(--preflight-steps 100 --continue-after-preflight)
 elif [[ "${STAGE2_MODE}" == full ]]; then
     if [[ -n "${STAGE2_RESUME:-}" ]]; then
         arguments+=(--resume "${STAGE2_RESUME}")
@@ -68,7 +70,8 @@ while true; do
     fi
     exit "${status}"
 done
-if [[ "${STAGE2_MODE}" == full && -f "${STAGE2_OUTPUT}/SAFE_STOP.json" && ! -f "${STAGE2_OUTPUT}/COMPLETE.json" ]]; then
+if [[ "${STAGE2_MODE}" == full || "${STAGE2_MODE}" == combined ]] &&
+   [[ -f "${STAGE2_OUTPUT}/SAFE_STOP.json" && ! -f "${STAGE2_OUTPUT}/COMPLETE.json" ]]; then
     rm -f -- "${STAGE2_OUTPUT}/SAFE_STOP.json"
     sbatch --dependency="afterok:${SLURM_JOB_ID}" --export="ALL,STAGE2_SOURCE=${STAGE2_SOURCE},STAGE2_OUTPUT=${STAGE2_OUTPUT},STAGE2_MODE=full,STAGE2_RESUME=${STAGE2_OUTPUT}/checkpoints/latest.ckpt" "$0"
 fi
