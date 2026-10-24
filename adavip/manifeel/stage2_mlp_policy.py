@@ -49,6 +49,7 @@ class Stage2MlpPolicy(FullSensorReferencePolicy):
             presence = torch.ones(tokens.shape[:2], dtype=torch.bool, device=tokens.device)
         if presence.dtype != torch.bool or tuple(presence.shape) != tuple(tokens.shape[:2]):
             raise ValueError("Presence must be boolean [B,7] in canonical token order")
+        presence = presence.to(device=tokens.device)
         z_t = self.obs_encoder.fuse_tokens(tokens, presence)
         u_hat = self.utility_predictor(z_t.detach())
         action_utility = u_hat.detach() if action_utility is None else action_utility.detach()
