@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate a Stage0 full-sensor checkpoint, isolating each task in one process."""
+"""Evaluate Stage0 or either Stage2 fusion, isolating tasks in separate processes."""
 
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--task-embedding-path", type=Path)
+    parser.add_argument("--config", type=Path, help="Override the legacy Stage2 inference architecture YAML")
+    parser.add_argument("--check-only", action="store_true", help="Load weights on CPU without Isaac Gym or a GPU")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--weights", choices=("ema", "raw"), default="ema")
     parser.add_argument("--task-id", help="One ManiFeel task ID; omit to evaluate all nine")
@@ -54,11 +56,16 @@ def evaluate_task(args: argparse.Namespace) -> None:
     if not matching_specs:
         raise ValueError(f"Unknown ManiFeel task: {args.task_id}")
     spec = matching_specs[0]
-    policy, cfg, metadata = load_evaluation_policy(args.checkpoint, args.device, args.weights)
+    policy, cfg, metadata = load_evaluation_policy(args.checkpoint, args.device, args.weights, args.config)
     embedding_path = args.task_embedding_path
     if embedding_path is None:
         bundled = args.checkpoint.parent.parent / "task_embeddings.npz"
-        embedding_path = bundled if bundled.is_file() else Path(cfg.task_embedding_path)
+        if bundled.is_file():
+            embedding_path = bundled
+        elif cfg.get("task_embedding_path"):
+            embedding_path = Path(cfg.task_embedding_path)
+        else:
+            raise ValueError("Supply --task-embedding-path with the frozen training task_embeddings.npz")
     embeddings = load_task_embeddings(embedding_path, [spec])
     shape_meta = OmegaConf.to_container(cfg.shape_meta, resolve=True)
     conditioned = FullSensorEvaluationPolicy(policy, shape_meta, embeddings[spec.task_id], spec.action_dim)
@@ -104,6 +111,17 @@ def main() -> None:
     """Keep simulator lifetimes separate and aggregate the official mean score."""
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=False)
+    if args.check_only:
+        from adavip.manifeel.full_sensor_evaluation import load_evaluation_policy
+
+        policy, cfg, metadata = load_evaluation_policy(args.checkpoint, "cpu", args.weights, args.config)
+        report = {"checkpoint": str(args.checkpoint.resolve()), "checkpoint_metadata": metadata,
+                  "policy_class": type(policy).__name__, "n_obs_steps": int(cfg.n_obs_steps),
+                  "parameters": sum(parameter.numel() for parameter in policy.parameters()),
+                  "check": "strict CPU weight/normalizer load; simulator not started"}
+        (args.output_dir / "checkpoint_check.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(json.dumps(report, indent=2), flush=True)
+        return
     if args.task_id:
         evaluate_task(args)
         return
@@ -120,6 +138,8 @@ def main() -> None:
                    "--policy-seed", str(args.policy_seed)]
         if args.task_embedding_path:
             command.extend(["--task-embedding-path", str(args.task_embedding_path.resolve())])
+        if args.config:
+            command.extend(["--config", str(args.config.resolve())])
         with (args.output_dir / f"{spec.task_id}.log").open("w") as stream:
             subprocess.run(command, check=True, stdout=stream, stderr=subprocess.STDOUT)
         reports[spec.task_id] = json.loads((output / "evaluation.json").read_text())

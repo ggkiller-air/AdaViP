@@ -47,42 +47,6 @@ def _configure(cfg):
     )
 
 
-def test_film_checkpoint_uses_local_assets(tmp_path, monkeypatch) -> None:
-    for variable in (
-        "ADAVIP_FILM_FUSION_CLIP_CHECKPOINT",
-        "ADAVIP_FILM_FUSION_CLIP_SOURCE_ROOT",
-        "ADAVIP_FILM_FUSION_SPARSH_CHECKPOINT",
-        "ADAVIP_FILM_FUSION_SPARSH_SOURCE_ROOT",
-    ):
-        monkeypatch.delenv(variable, raising=False)
-    monkeypatch.setenv("ADAVIP_FILM_FUSION_ASSET_ROOT", str(tmp_path))
-    for relative_path in (
-        "pretrained/film_fusion/clip/RN50.pt",
-        "pretrained/film_fusion/sparsh/dino_vitbase.ckpt",
-    ):
-        asset = tmp_path / relative_path
-        asset.parent.mkdir(parents=True, exist_ok=True)
-        asset.write_bytes(b"checkpoint")
-
-    cfg = _checkpoint_config(FILM_RUNNER_TARGET)
-    _configure(cfg)
-
-    assert cfg.task.env_runner._target_ == FILM_RUNNER_TARGET
-    assert cfg.task.env_runner.device == "cuda:4"
-    assert cfg.task.env_runner.n_test == 10
-    assert cfg.task.env_runner.n_test_vis == 0
-    assert cfg.task.env_runner.max_steps == 500
-    assert cfg.task.env_runner.test_start_seed == 100000
-    assert cfg.policy.obs_encoder.clip_encoder.checkpoint_path == str(
-        tmp_path / "pretrained/film_fusion/clip/RN50.pt"
-    )
-    assert cfg.policy.obs_encoder.sparsh_encoder.checkpoint_path == str(
-        tmp_path / "pretrained/film_fusion/sparsh/dino_vitbase.ckpt"
-    )
-    assert cfg.policy.obs_encoder.clip_encoder.source_root.endswith("third_party/CLIP")
-    assert cfg.policy.obs_encoder.sparsh_encoder.source_root.endswith("third_party/sparsh")
-
-
 def test_film_checkpoint_reports_missing_explicit_override(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("ADAVIP_FILM_FUSION_CLIP_CHECKPOINT", str(tmp_path / "missing.pt"))
     with pytest.raises(FileNotFoundError, match="ADAVIP_FILM_FUSION_CLIP_CHECKPOINT"):

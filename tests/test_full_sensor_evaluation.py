@@ -99,6 +99,7 @@ def test_multitask_entrypoint_aggregates_mean_score_not_success_rate(
         task_embedding_path=tmp_path / "embeddings.npz", device="cuda:0", weights="ema",
         task_id=None, n_test=50, n_test_vis=0, max_steps=500,
         test_start_seed=100000, policy_seed=42,
+        config=None, check_only=False,
     )
     calls = []
 

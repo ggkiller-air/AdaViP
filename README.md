@@ -1,5 +1,8 @@
 # AdaViP ManiFeel Simulation
 
+Stage2 Transformer / MLP 共用 `main` 和同一评测入口，支持自动识别 ckpt、批量评测：
+见 [4090 评测说明](docs/stage2_evaluation.md)。
+
 本仓库只保留 AdaViP 在 ManiFeel Isaac Gym/TacSL 中的仿真训练与评估流程。
 真机策略、数据处理和部署代码由独立仓库维护；运行这里的实验不需要 ROS、
 相机、机器人 SDK 或真机数据。

@@ -1,32 +1,78 @@
-"""Load Stage0 inference weights and adapt complete simulator observations."""
+"""Load Stage0/Stage2 inference weights and adapt simulator observations."""
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import dill
 import hydra
 import numpy as np
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import torch
 
 from adavip.manifeel.action_adapter import truncate_action_for_task
 from adavip.manifeel.full_sensor_schema import IMAGE_KEYS, validate_shape_meta
 
 
+STAGE2_CONFIG = Path(__file__).resolve().parents[2] / "configs/manifeel/eval_stage2_t2.yaml"
+
+
+def stage2_variant(state: dict, contract: dict) -> str:
+    """Identify legacy checkpoints by saved fusion tensors and validate metadata."""
+    mlp = "final_fusion.0.weight" in state
+    transformer = "cross_attention.in_proj_weight" in state
+    if mlp == transformer:
+        raise ValueError("Stage2 checkpoint must contain exactly one known fusion architecture")
+    variant = "stage2_mlp_fusion" if mlp else "stage2_transformer"
+    if contract.get("variant", variant) != variant:
+        raise ValueError("Stage2 variant metadata disagrees with fusion tensors")
+    return variant
+
+
 def load_evaluation_policy(
     checkpoint: Path, device: str = "cpu", weights: str = "ema",
+    config_path: Path | None = None,
 ) -> tuple[torch.nn.Module, DictConfig, dict]:
     """Restore a trusted checkpoint's policy and normalizer, without an optimizer."""
     if weights not in ("ema", "raw"):
         raise ValueError("weights must be ema or raw")
-    payload = torch.load(str(checkpoint), map_location="cpu", pickle_module=dill, mmap=True)
-    cfg = payload["cfg"]
+    load_options = {"map_location": "cpu", "pickle_module": dill}
+    if "mmap" in inspect.signature(torch.load).parameters:
+        load_options["mmap"] = True
+    payload = torch.load(str(checkpoint), **load_options)
+    is_stage2 = "contract" in payload and "model" in payload and "state_dicts" not in payload
+    if is_stage2:
+        state_key = "ema" if weights == "ema" else "model"
+        if state_key not in payload:
+            raise ValueError(f"Checkpoint has no {state_key}; refusing a silent weights fallback")
+        state = payload[state_key]
+        variant = stage2_variant(state, payload["contract"])
+        if config_path:
+            cfg = OmegaConf.load(config_path)
+        elif "cfg" in payload:
+            cfg = OmegaConf.create(payload["cfg"])
+        else:
+            cfg = OmegaConf.load(STAGE2_CONFIG)
+        cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+        cfg.policy._target_ = (
+            "adavip.manifeel.stage2_mlp_policy.Stage2MlpPolicy" if variant == "stage2_mlp_fusion"
+            else "adavip.manifeel.stage2_policy.Stage2Policy")
+        metadata = {key: payload[key] for key in ("epoch", "global_step", "batch_cursor", "stage")
+                    if key in payload}
+        metadata.update(variant=variant, contract_hash=payload.get("contract_hash"))
+    else:
+        if config_path:
+            raise ValueError("Stage0 checkpoints already contain their configuration")
+        cfg = payload["cfg"]
+        state_key = "ema_model" if weights == "ema" else "model"
+        if state_key not in payload["state_dicts"]:
+            raise ValueError(f"Checkpoint has no {state_key}; refusing a silent weights fallback")
+        state = payload["state_dicts"][state_key]
+        metadata = {key: dill.loads(payload["pickles"][key])
+                    for key in ("epoch", "global_step", "batch_in_epoch")
+                    if key in payload.get("pickles", {})}
     validate_shape_meta(cfg.shape_meta)
-    state_key = "ema_model" if weights == "ema" else "model"
-    if state_key not in payload["state_dicts"]:
-        raise ValueError(f"Checkpoint has no {state_key}; refusing a silent weights fallback")
-    state = payload["state_dicts"][state_key]
     if not any(key.startswith("normalizer.") for key in state):
         raise ValueError("Checkpoint policy has no saved normalizer")
     policy = hydra.utils.instantiate(cfg.policy)
@@ -34,9 +80,6 @@ def load_evaluation_policy(
     policy.to(device)
     policy.requires_grad_(False)
     policy.eval()
-    metadata = {key: dill.loads(payload["pickles"][key])
-                for key in ("epoch", "global_step", "batch_in_epoch")
-                if key in payload.get("pickles", {})}
     metadata["weights"] = weights
     return policy, cfg, metadata
 
