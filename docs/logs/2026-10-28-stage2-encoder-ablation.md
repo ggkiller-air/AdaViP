@@ -79,3 +79,27 @@
   initialization, sampling, budget and checkpoint cadence are unchanged.
 - GPU inventory before retry: existing392551/server13 remains H200143771MiB,
   38071MiB used/95% utilization, PID3166774; L1/L2 remain running and untouched.
+
+## Retry and verified GPU startup
+
+- Frozen repair commit `1ee5601`,602inventoried source/package files, under
+  `/data/wangzihao/outputs/manifeel/stage2_encoder_ablation_t2_batch32_ep600_seed42_retry_20261028_233606/source`.
+  The previous failed root/source/logs are preserved; its `retry.json` points
+  to this replacement run.
+- Submitted S1 gpu397370/gpux397371, S2 gpu397372/gpux397373,
+  S3 gpu397374/gpux397375, S4 gpu397376/gpux397377. Both maximum walltimes were
+  queried at submission:100h/48h. Current allocations: S1/397371, S2/397373,
+  S3/397375 on server13/gpux; S4/397376 on server29/gpu. Requeue=1 confirmed;
+  each winning allocation canceled only its same-strategy sibling request.
+- All four passed actual H200 B/C gradient routing before cache load, completed
+  formal update1, atomically saved latest, then began full RAM loading. Latest
+  sizes2513383076/2513384036/2976588076/2976588076bytes for S1/S2/S3/S4.
+  All four retain common initialization SHA256 `f0741c79...dfe83aae`, have
+  identical first-draw task counts[2,3,4,4,4,5,3,2,5], and first Utility Loss
+  0.4017896691802889. No steady-state throughput or completed RAM load is
+  claimed at this startup checkpoint. Details: root `startup_verification.json`.
+- Strict CPU inference restoration of all four actual GPU latest checkpoints
+  passed, including both dual encoders, saved RMS and48Normalizer tensors;
+  restored global_step=1. Evidence: `retry_actual_checkpoint_restore.log` copied
+  into the retry root's `cpu_evidence/`. All four stderr files were empty at
+  the last check; full RAM array loading was progressing normally.
