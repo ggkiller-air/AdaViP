@@ -36,3 +36,24 @@
 - Read-only GPU inventory before submission: job392551/server13 has H200,
   143771MiB total/38071MiB used/99% utilization, PID3166774. L1/L2 jobs397055/
   397057 run on server51/server52. No existing job was modified or canceled.
+
+## Formal submissions
+
+- Frozen code commit `3ada9b9`, independent branch
+  `experiment/stage2_encoder_ablation_t2`; L1/L2 branch remains at `580766f`.
+  Source and pinned Diffusion Policy package have601SHA256-inventoried files,
+  made read-only under
+  `/data/wangzihao/outputs/manifeel/stage2_encoder_ablation_t2_batch32_ep600_seed42_20261028_221516/source`.
+  CPU evidence is copied into the sibling `cpu_evidence/` directory.
+- S1 gpu397198/gpux397199; S2 gpu397200/gpux397201;
+  S3 gpu397202/gpux397203; S4 gpu397204/gpux397205. Each requests one H200,
+  32CPU and384GiB. Both current maximum walltimes were queried during each
+  submission: gpu100hours, gpux48hours. Per-strategy lock and queue files
+  restrict cancellation to that strategy's sibling allocation.
+- Initial scheduler inspection: all eight PENDING/AssocGrpGRES. No formal
+  update, new GPU measurement or training throughput result is claimed yet.
+  Existing jobs397055/397057/392551 remain RUNNING and untouched.
+- Each strategy's sibling `s1/`--`s4/` directory holds `submission.txt`, queues,
+  then metrics/gradient/runtime logs and checkpoints. Scheduler logs will be
+  `/data/wangzihao/outputs/manifeel/slurm/uvip_sN_t2_batch32_ep600_JOBID.out`
+  and `.err`; the root `submissions.json` maps strategies to both job IDs.
