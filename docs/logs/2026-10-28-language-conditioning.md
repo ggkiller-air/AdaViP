@@ -34,3 +34,17 @@
 - Evidence: `/public/home/wangzihao/.cache/language_conditioning_20261028/`
   contains focused/full/runtime logs and actual_config.json. Submit helper reads
   current gpu/gpux maximum times, with per-run lock and sibling-only cancellation.
+
+## Formal submissions
+
+- Frozen training commit: `fac904e`; source plus pinned Diffusion Policy package
+  copied under `/data/wangzihao/outputs/manifeel/language_conditioning_t2_batch64_ep500_seed42_20261028_204459/source`.
+  All 594 source files have SHA256 inventory; source is read-only. Separate `l1/`
+  and `l2/` siblings contain queues, logs and future checkpoints.
+- Submitted L1: gpu `397055` (100 hours), gpux `397056` (48 hours).
+  Submitted L2: gpu `397057` (100 hours), gpux `397058` (48 hours).
+  Both maximum limits were queried at submission; no shortened time-min.
+- Initial scheduler inspection: all four are PENDING (Priority/Resources).
+  No formal optimizer update, GPU result or long-run throughput is claimed yet.
+  Job `392551` remains RUNNING on server13; read-only sample before submission:
+  NVIDIA H200, 143771 MiB total, 38071 MiB used, 93% utilization, PID3166774.
