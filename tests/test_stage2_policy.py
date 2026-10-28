@@ -31,13 +31,14 @@ class TinyImageEncoder(nn.Module):
         return self.network(images)
 
 
-def make_policy() -> Stage2Policy:
+def make_policy(encoder_strategy: str = "s0") -> Stage2Policy:
     """Build a small U-Net while retaining the seven real 256D token contract."""
     shape_meta = make_shape_meta((3, 8, 8), (3, 8, 8), language_dim=8)
     encoder = FullSensorObsEncoder(shape_meta, image_feature_dim=8,
                                    rgb_model=TinyImageEncoder(), use_group_norm=False)
     scheduler = DDPMScheduler(num_train_timesteps=8, prediction_type="epsilon")
     policy = Stage2Policy(encoder, scheduler, horizon=16, n_obs_steps=2,
+                          encoder_strategy=encoder_strategy,
                           n_action_steps=8, num_inference_steps=8,
                           down_dims=(16, 32), diffusion_step_embed_dim=16,
                           n_groups=8)

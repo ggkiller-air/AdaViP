@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -35,9 +36,9 @@ class Stage2SourceDataset(FullSensorManiFeelDataset):
         return super()._read_images(array, indices, key)
 
 
-def load_complete_ram_cache(source: Stage2SourceDataset, directory: str,
-                            cache_config: str) -> int:
-    """Read and verify each existing NPY into one parent RAM allocation before fork."""
+def validate_complete_ram_cache(source: Stage2SourceDataset, directory: str,
+                                cache_config: str) -> dict:
+    """Check the cache source and complete array metadata without reading image data."""
     root = Path(directory)
     manifest = json.loads((root / "manifest.json").read_text())
     frozen_config = OmegaConf.to_container(OmegaConf.load(cache_config).dataset, resolve=True)
@@ -60,22 +61,39 @@ def load_complete_ram_cache(source: Stage2SourceDataset, directory: str,
     allocated = os.environ.get("SLURM_MEM_PER_NODE")
     if allocated and required > int(allocated) * 1024 ** 2:
         raise MemoryError("H200 job memory is too small for complete cache plus 32 GiB headroom")
-    groups = [{"data": {}} for _ in source.task_specs]
-    total = 0
     for record in records:
+        mapped = np.load(root / record["filename"], mmap_mode="r", allow_pickle=False)
+        if (mapped.dtype != np.float32 or list(mapped.shape) != record["shape"]
+                or len(mapped) != int(source.episode_ends[int(record["task_index"])][-1])
+                or mapped.nbytes != record["nbytes"]):
+            raise ValueError(f"Wrong cache shape or dtype: {record['filename']}")
+    return manifest
+
+
+def load_complete_ram_cache(source: Stage2SourceDataset, directory: str,
+                            cache_config: str, workers: int = 1) -> int:
+    """Load/hash all decoded arrays into shared read-only parent RAM before fork."""
+    manifest = validate_complete_ram_cache(source, directory, cache_config)
+    root = Path(directory)
+    groups = [{"data": {}} for _ in source.task_specs]
+
+    def load(record: dict) -> tuple[int, str, SourceIndexedArray, int]:
         task, key = int(record["task_index"]), record["key"]
         expected_length = int(source.episode_ends[task][-1])
         mapped = np.load(root / record["filename"], mmap_mode="r", allow_pickle=False)
-        if (mapped.dtype != np.float32 or list(mapped.shape) != record["shape"]
-                or len(mapped) != expected_length or mapped.nbytes != record["nbytes"]):
-            raise ValueError(f"Wrong cache shape or dtype: {record['filename']}")
         values = np.array(mapped, copy=True)
         if array_digest(values) != record["sha256"]:
             raise ValueError(f"Corrupt decoded cache: {record['filename']}")
-        groups[task]["data"][key] = SourceIndexedArray(values, np.arange(expected_length), expected_length)
-        total += values.nbytes
+        values.flags.writeable = False
         print(json.dumps({"event": "stage2_ram_array", "task": task, "key": key,
                           "bytes": values.nbytes}), flush=True)
+        return task, key, SourceIndexedArray(values, np.arange(expected_length), expected_length), values.nbytes
+
+    total = 0
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for task, key, array, size in pool.map(load, manifest["arrays"]):
+            groups[task]["data"][key] = array
+            total += size
     if total != manifest["nbytes"]:
         raise ValueError("Decoded RAM byte count mismatch")
     source.groups = groups

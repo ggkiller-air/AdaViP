@@ -58,9 +58,15 @@ def load_evaluation_policy(
         cfg.policy._target_ = (
             "adavip.manifeel.stage2_mlp_policy.Stage2MlpPolicy" if variant == "stage2_mlp_fusion"
             else "adavip.manifeel.stage2_policy.Stage2Policy")
+        strategy = payload["contract"].get("encoder_strategy", "s0")
+        if variant == "stage2_transformer" and strategy != "s0":
+            if cfg.policy.get("encoder_strategy", strategy) != strategy:
+                raise ValueError("Checkpoint encoder strategy disagrees with architecture")
+            cfg.policy.encoder_strategy = strategy
         metadata = {key: payload[key] for key in ("epoch", "global_step", "batch_cursor", "stage")
                     if key in payload}
         metadata.update(variant=variant, contract_hash=payload.get("contract_hash"))
+        metadata["encoder_strategy"] = strategy
     else:
         if config_path:
             raise ValueError("Stage0 checkpoints already contain their configuration")

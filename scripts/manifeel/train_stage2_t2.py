@@ -45,7 +45,7 @@ def set_stage_trainability(policy: Stage2Policy, stage: str) -> None:
     """Freeze the inherited path for A/B and all action modules for A."""
     if stage not in ("A", "B", "C"):
         raise ValueError(stage)
-    policy.obs_encoder.requires_grad_(stage == "C")
+    policy.configure_encoders(stage)
     for module in (policy.z_projection, policy.utility_projection, policy.film_hypernets,
                    policy.query_projection, policy.cross_attention, policy.fusion_norm,
                    policy.fusion_ff, policy.model):
@@ -57,17 +57,21 @@ def set_stage_trainability(policy: Stage2Policy, stage: str) -> None:
 def make_optimizer_scheduler(policy: Stage2Policy, steps_per_epoch: int,
                              epochs: int = 600) -> tuple[torch.optim.Optimizer, object]:
     """Use AdamW with cosine decay and a one-epoch encoder unfreeze ramp."""
+    encoder_groups = policy.encoder_optimizer_groups()
     encoder = list(policy.obs_encoder.parameters())
+    if policy.action_encoder is not None:
+        encoder += list(policy.action_encoder.parameters())
     utility = list(policy.utility_predictor.parameters())
     taken = {id(item) for item in encoder + utility}
-    action = [item for item in policy.parameters() if item.requires_grad and id(item) not in taken]
+    action = [item for name, item in policy.named_parameters()
+              if id(item) not in taken and not name.startswith("normalizer.") and name != "_dummy_variable"]
     optimizer = torch.optim.AdamW([
-        {"params": encoder, "lr": 8e-5, "name": "encoder"},
+        *encoder_groups,
         {"params": utility, "lr": 1e-4, "name": "utility"},
         {"params": action, "lr": 1e-4, "name": "action"},
     ], betas=(0.95, 0.999), eps=1e-8, weight_decay=1e-6)
     total = steps_per_epoch * epochs
-    c_start = steps_per_epoch * 6
+    c_start = steps_per_epoch * (1 if policy.is_dual_encoder else 6)
 
     def shared(step: int) -> float:
         if step < 500:
@@ -81,7 +85,7 @@ def make_optimizer_scheduler(policy: Stage2Policy, steps_per_epoch: int,
         return shared(step) * min(1.0, (step - c_start + 1) / 500)
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, lr_lambda=(encoder_schedule, shared, shared),
+        optimizer, lr_lambda=([encoder_schedule] * len(encoder_groups) + [shared, shared]),
     )
     return optimizer, scheduler
 
@@ -167,7 +171,8 @@ def load_teacher(path: str, label_directory: str) -> object:
     return workspace
 
 
-def build_policy(teacher: object, utility_rms: np.ndarray) -> Stage2Policy:
+def build_policy(teacher: object, utility_rms: np.ndarray,
+                 encoder_strategy: str = "s0") -> Stage2Policy:
     """Create a fresh Stage 2 DP and strictly inherit only encoder/normalizer."""
     cfg = teacher.cfg.policy
     encoder = hydra.utils.instantiate(cfg.obs_encoder)
@@ -175,6 +180,7 @@ def build_policy(teacher: object, utility_rms: np.ndarray) -> Stage2Policy:
     policy = Stage2Policy(
         obs_encoder=encoder, noise_scheduler=scheduler,
         utility_rms=torch.from_numpy(utility_rms.astype(np.float32)),
+        encoder_strategy=encoder_strategy,
         horizon=cfg.horizon, n_obs_steps=cfg.n_obs_steps,
         n_action_steps=cfg.n_action_steps, num_inference_steps=cfg.num_inference_steps,
         diffusion_step_embed_dim=cfg.diffusion_step_embed_dim,
