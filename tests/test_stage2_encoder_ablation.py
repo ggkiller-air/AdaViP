@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -254,3 +255,76 @@ def test_persistent_cpu_workers_preserve_training(teacher: object, tmp_path: Pat
     assert direct.cumulative_counts == transported.cumulative_counts
     for key, value in direct.policy.state_dict().items():
         torch.testing.assert_close(value, transported.policy.state_dict()[key], rtol=0, atol=0)
+
+
+def test_real_label_dataset_wrapper_trains_and_logs_tasks(
+    teacher: object, dataset_arguments: dict, tmp_path: Path,
+) -> None:
+    """Exercise the real wrapper interface instead of giving it a ToyDataset substitute."""
+    import zarr
+    from adavip.manifeel.decoded_sensor_cache import build_decoded_cache
+    from adavip.manifeel.full_sensor_schema import IMAGE_KEYS, make_shape_meta
+    from adavip.manifeel.stage2_data import Stage2SourceDataset, Stage2UtilityDataset, load_complete_ram_cache
+    from adavip.manifeel.utility_label_store import complete_window_index
+
+    for spec in dataset_arguments["task_specs"]:
+        group = zarr.open_group(str(tmp_path / spec["dataset"]), mode="a")
+        for key in (*IMAGE_KEYS, "state", "action"):
+            values = np.repeat(group["data"][key][:], 3, axis=0)
+            group["data"].create_dataset(key, data=values, overwrite=True)
+        group["meta"].create_dataset("episode_ends", data=np.array([20, 45]), overwrite=True)
+    np.savez(dataset_arguments["task_embedding_path"],
+             task_ids=[spec["task_id"] for spec in dataset_arguments["task_specs"]],
+             embeddings=np.ones((2, 8), dtype=np.float32))
+    arguments = {**dataset_arguments, "shape_meta": make_shape_meta((3, 8, 8), (3, 8, 8), 8),
+                 "horizon": 16, "n_action_steps": 8}
+    source = Stage2SourceDataset(**arguments)
+    manifest = copy.deepcopy(source.manifest)
+    for store in manifest["stores"]:
+        store["train_episodes"], store["val_episodes"] = [0, 1], []
+    index = complete_window_index(manifest)
+    store = SimpleNamespace(manifest={"dataset_manifest": manifest}, index=index,
+                            utility=np.zeros((len(index), 9), dtype=np.float32))
+    dataset = Stage2UtilityDataset(source, store)
+    assert len(dataset) == 30
+    assert dataset.task_specs is source.task_specs
+    cache = tmp_path / "real_cache"
+    size = build_decoded_cache(source, str(cache), workers=2)["nbytes"]
+    cache_config = tmp_path / "cache_config.yaml"
+    OmegaConf.save(OmegaConf.create({"dataset": {
+        "_target_": "adavip.manifeel.full_sensor_dataset.FullSensorManiFeelDataset", **arguments}}), cache_config)
+    workspace = Stage2AblationTrainer(
+        student(teacher, "s3"), dataset, tmp_path / "real_training", {"encoder_strategy": "s3"},
+        OmegaConf.to_container(small_config(), resolve=True),
+        lambda: load_complete_ram_cache(source, str(cache), str(cache_config), workers=2),
+        device="cpu", batch_size=4, epochs=2, workers=0,
+    )
+    workspace.run()
+    assert workspace.global_step == 16
+    assert sum(workspace.cumulative_counts) == 60
+    assert source.verified_ram_cache
+    epochs = [json.loads(line) for line in (workspace.output / "metrics.jsonl").read_text().splitlines()
+              if json.loads(line)["event"] == "epoch_complete"]
+    assert set(epochs[-1]["per_task_action_loss"]) == {spec.task_id for spec in dataset.task_specs}
+    assert (workspace.output / "checkpoints/latest.ckpt").exists()
+
+
+def test_step_creates_missing_ipc_directory_before_python() -> None:
+    """Simulate a Slurm step whose private /dev/shm lacks the batch-shell directory."""
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="step", dir=tempfile.gettempdir()) as parent:
+        target = Path(parent) / "ipc"
+        assert not target.exists()
+        wrapper = Path(__file__).resolve().parents[1] / "scripts/manifeel/run_stage2_step.sh"
+        result = subprocess.run(
+            ["bash", str(wrapper), sys.executable, "-B", "-c",
+             "import json; from adavip.manifeel.training_runtime import check_dataloader_ipc; "
+             "print(json.dumps(check_dataloader_ipc(10)))"],
+            env={**os.environ, "TMPDIR": str(target)}, text=True, capture_output=True,
+            timeout=40, check=True,
+        )
+        assert json.loads(result.stdout)["event"] == "ipc_preflight_ok"

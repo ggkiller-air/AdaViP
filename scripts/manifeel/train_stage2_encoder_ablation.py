@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 import torch
 from omegaconf import OmegaConf
+from torch.utils.data import DataLoader
 
 from adavip.manifeel.full_sensor_workspace import normalizer_fingerprint
 from adavip.manifeel.stage2_ablation_workspace import Stage2AblationTrainer, tensor_fingerprint
@@ -38,6 +39,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--cache-workers", type=int, default=8)
+    parser.add_argument("--check-inputs", action="store_true",
+                        help="Validate real K64 inputs, IPC and first raw batch on CPU without training")
     return parser.parse_args()
 
 
@@ -49,6 +52,7 @@ def source_fingerprint() -> str:
              "adavip/manifeel/reference_diffusion_policy.py", "adavip/manifeel/full_sensor_dataset.py",
              "adavip/manifeel/decoded_sensor_cache.py", "adavip/manifeel/stage1_dataset.py",
              "adavip/manifeel/full_sensor_workspace.py", "scripts/manifeel/train_stage2_t2.py",
+             "scripts/manifeel/run_stage2_step.sh", "slurm/manifeel/train_stage2_encoder_ablation.sbatch",
              "scripts/manifeel/train_stage2_encoder_ablation.py")
     digest = hashlib.sha256()
     for name in names:
@@ -62,7 +66,8 @@ def main() -> None:
     args = parse_args()
     if args.workers < 0 or args.cache_workers < 1:
         raise ValueError("Invalid CPU worker count")
-    if not torch.cuda.is_available() or torch.cuda.device_count() != 1 or "H200" not in torch.cuda.get_device_name(0):
+    if not args.check_inputs and (not torch.cuda.is_available() or torch.cuda.device_count() != 1
+                                  or "H200" not in torch.cuda.get_device_name(0)):
         raise RuntimeError("Formal ablation requires exactly one allocated H200")
     check_dataloader_ipc()
     cv2.setNumThreads(0)
@@ -76,6 +81,20 @@ def main() -> None:
             "epoch": 500, "global_step": 547400, "batch_in_epoch": 0, "weights": "ema"}:
         raise ValueError("Wrong Utility label Teacher")
     cache_manifest = validate_complete_ram_cache(dataset.source, args.cache, args.cache_config)
+    if args.check_inputs:
+        sampler = dataset.make_task_balanced_sampler(torch.Generator().manual_seed(43))
+        batch = next(iter(DataLoader(dataset, batch_size=32, sampler=sampler, num_workers=0,
+                                    generator=torch.Generator().manual_seed(700042))))
+        if not torch.isfinite(batch["utility"]).all() or not torch.isfinite(batch["action"]).all():
+            raise FloatingPointError("Nonfinite first raw batch")
+        print(json.dumps({"event": "real_inputs_verified", "windows": len(dataset),
+                          "task_ids": [spec.task_id for spec in dataset.task_specs],
+                          "cache_bytes": cache_manifest["nbytes"],
+                          "labels_sha256": dataset.store.manifest["sha256"],
+                          "observation_shapes": {key: list(value.shape) for key, value in batch["obs"].items()},
+                          "action_shape": list(batch["action"].shape),
+                          "utility_shape": list(batch["utility"].shape)}), flush=True)
+        return
     utility = np.asarray(dataset.store.utility, dtype=np.float64)
     rms = np.maximum(np.sqrt(np.square(utility).mean(axis=0)), 1e-6)
     teacher = load_teacher(args.teacher, args.labels)

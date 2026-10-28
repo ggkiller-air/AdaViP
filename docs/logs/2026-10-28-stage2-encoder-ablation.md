@@ -57,3 +57,25 @@
   then metrics/gradient/runtime logs and checkpoints. Scheduler logs will be
   `/data/wangzihao/outputs/manifeel/slurm/uvip_sN_t2_batch32_ep600_JOBID.out`
   and `.err`; the root `submissions.json` maps strategies to both job IDs.
+
+## Startup failure repair
+
+- The four actual allocations failed before any formal update:397198/397203/
+  397205 raised `Stage2UtilityDataset.task_specs` AttributeError;397200 could not
+  create its multiprocessing directory under the step's `/dev/shm`. All sibling
+  cancellations were expected duplicate prevention. No latest checkpoint existed.
+- Expose the source's task metadata on the real label wrapper. Create TMPDIR
+  inside the srun step before starting Python. Added real-wrapper training/RAM/
+  per-task logging regression and an actual missing-directory IPC subprocess
+  regression, rather than relying only on ToyDataset. Added `--check-inputs` to
+  run the real CLI's production dataset/IPC/first-batch validation on CPU.
+- CPU checks:14ablation tests plus15existing policy/MLP/evaluation tests pass.
+  The actual K64 CLI check passes:65265windows,9tasks, batch32, five T2 image
+  streams, state[32,2,7], language[32,2,512], action[32,16,7], utility[32,9].
+  Evidence: `startup_fix.log`, `startup_fix_existing.log`, `real_inputs_fix.log`
+  under `/public/home/wangzihao/.cache/s2a/evidence/`.
+- Enable Slurm requeue eligibility for scheduler-managed interruptions, retaining
+  safe-stop continuation and stopping on application errors. Training losses,
+  initialization, sampling, budget and checkpoint cadence are unchanged.
+- GPU inventory before retry: existing392551/server13 remains H200143771MiB,
+  38071MiB used/95% utilization, PID3166774; L1/L2 remain running and untouched.

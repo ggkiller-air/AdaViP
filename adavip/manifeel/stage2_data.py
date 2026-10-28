@@ -107,6 +107,7 @@ class Stage2UtilityDataset(Dataset):
     def __init__(self, source: Stage2SourceDataset, store: UtilityLabelStore) -> None:
         self.source = source
         self.store = store
+        self.task_specs = source.task_specs
         align_source_to_labels(source, store)
         self.task_indices = np.asarray(store.index["task_index"], dtype=np.int64)
 

@@ -43,6 +43,9 @@ Fork eight persistent workers only after RAM is ready. They share read-only
 arrays, use separate core affinity, and supply pinned batches for nonblocking
 H2D copies. The next sampler draw follows the saved cursor without repetition.
 RAM loading/checkpoint startup time is separate from training throughput.
+`--check-inputs` verifies the production K64 dataset wrapper, task metadata and
+first batch on CPU. The step wrapper creates its own IPC directory before
+Python imports, since the batch shell and srun step can expose different mounts.
 
 Per-run files:
 
@@ -73,4 +76,6 @@ S2A_STRATEGY=s3 bash scripts/manifeel/submit_stage2_encoder_ablation.sh
 
 The helper queries both current partition maximum walltimes, queues gpu and
 gpux, and uses a per-run lock plus sibling-only cancellation. Safe stops resume
-in a subsequent allocation from the latest complete optimizer update.
+in a subsequent allocation from the latest complete optimizer update. Slurm
+requeue is enabled for scheduler-managed preemption/node failure; application
+errors still stop for diagnosis rather than repeating indefinitely.

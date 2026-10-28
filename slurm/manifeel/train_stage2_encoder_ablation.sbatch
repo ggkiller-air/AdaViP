@@ -7,6 +7,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=384G
 #SBATCH --time=4-04:00:00
+#SBATCH --requeue
 #SBATCH --signal=B:USR1@300
 #SBATCH --output=/data/wangzihao/outputs/manifeel/slurm/%x_%j.out
 #SBATCH --error=/data/wangzihao/outputs/manifeel/slurm/%x_%j.err
@@ -68,7 +69,8 @@ forward_stop() {
     printf '%s\n' scheduler_signal > "${ADAVIP_STOP_FILE}"
 }
 trap forward_stop USR1 TERM
-srun --cpu-bind=cores --unbuffered "${MANIFEEL_PYTHON}" -u \
+srun --cpu-bind=cores --unbuffered bash scripts/manifeel/run_stage2_step.sh \
+    "${MANIFEEL_PYTHON}" -u \
     scripts/manifeel/train_stage2_encoder_ablation.py "${arguments[@]}" &
 trainer_pid=$!
 while true; do
