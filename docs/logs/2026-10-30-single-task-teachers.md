@@ -36,3 +36,23 @@
   Per-run locks, explicit srun CPUs,40-update isolated preflight, CPU/worker
   affinity evidence, strict EMA/normalizer restore, atomic checkpoints and
   dependent safe-stop continuation are implemented.
+
+## Submission at19:12CST
+
+- Published independent branch `experiment/single_task_teacher_batch8_20261030`
+  at `1efd9a7`; retained the pre-existing dirty six-trainer status log untouched.
+  Frozen2170 tracked main/submodule files with SHA256 inventory under
+  `/data/wangzihao/outputs/manifeel/single_task_teachers_batch8_ep400_seed42_20261030_191203/source`.
+  Source files are read-only; CPU evidence and source manifest are siblings.
+- Submitted exactly eight jobs, each single `gpu,gpux`,48h,Requeue=1:
+  Plug five nodrop404581/drop404582; Plug two nodrop404583/drop404584;
+  USB five nodrop404585/drop404586; Sorting five nodrop404587/drop404588.
+  Every per-run queue JSON records current partition MaxTime100h/48h and the
+  chosen48h. Root `submissions.json` maps all task/input/dropout/job/output pairs.
+- At19:13 all eight are PENDING/AssocGrpGRES, with no allocation, stdout,
+  preflight result or formal update yet. Current jobs399040/399733/399747 remain
+  RUNNING and untouched. Do not claim GPU preflight or training has begun;
+  allocation will automatically run isolated preflight then formal training.
+- Latest focused rerun, including strict inference-only workspace restore and
+  numerical EMA action equivalence:9passed in16.97seconds. Shell syntax and
+  diff checks pass; dry-run submission produces exactly eight entries.
