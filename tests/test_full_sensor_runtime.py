@@ -45,3 +45,24 @@ def test_runtime_rejects_silent_tmpdir_fallback(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     with pytest.raises(RuntimeError, match="not usable"):
         check_dataloader_ipc()
+
+
+def test_language_step_checks_worker_transfer_before_trainer() -> None:
+    """A missing persistent IPC directory is created and tested in the actual step."""
+    import json
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    wrapper = Path(__file__).resolve().parents[1] / "scripts/manifeel/run_language_step.sh"
+    with tempfile.TemporaryDirectory(prefix="li", dir=tempfile.gettempdir()) as directory:
+        selected = Path(directory) / "ipc"
+        result = subprocess.run(
+            ["bash", str(wrapper), sys.executable, "-c", "print('trainer_started')"],
+            env={**os.environ, "TMPDIR": str(selected)}, capture_output=True, text=True,
+            check=True, timeout=40,
+        )
+    records = result.stdout.splitlines()
+    assert json.loads(records[0])["event"] == "ipc_preflight_ok"
+    assert records[-1] == "trainer_started"

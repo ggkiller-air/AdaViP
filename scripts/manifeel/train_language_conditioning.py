@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import signal
 from pathlib import Path
 
@@ -10,6 +12,7 @@ import torch
 from omegaconf import OmegaConf
 
 from adavip.manifeel.language_conditioning_workspace import LanguageConditioningWorkspace
+from scripts.manifeel.language_runtime import configure_profile
 
 
 def main() -> None:
@@ -31,10 +34,15 @@ def main() -> None:
     if (not torch.cuda.is_available() or torch.cuda.device_count() != 1
             or "H200" not in torch.cuda.get_device_name(0)):
         raise RuntimeError("Formal training requires exactly one allocated H200")
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
+    profile = os.environ.get("LC_RUNTIME_PROFILE", "strict")
+    runtime = {"profile": profile, **configure_profile(profile),
+               "job_id": os.environ.get("SLURM_JOB_ID"),
+               "cpus": sorted(os.sched_getaffinity(0))}
+    output = Path(cfg.output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    (output / f"runtime_profile_{os.environ.get('SLURM_JOB_ID', 'local')}.json").write_text(
+        json.dumps(runtime, indent=2) + "\n")
+    print(json.dumps({"event": "language_runtime", **runtime}), flush=True)
     workspace = LanguageConditioningWorkspace(cfg, output_dir=cfg.output_dir)
 
     def request_stop(signum: int, frame: object) -> None:

@@ -183,7 +183,10 @@ def load_decoded_cache(dataset: Any, directory: str, mode: str = "ram") -> list[
     rows = [selected_rows(dataset, index) for index in range(len(groups))]
     def load_array(record: dict) -> None:
         task_index, key = record["task_index"], record["key"]
-        values = np.load(root / record["filename"], mmap_mode="r" if mode == "mmap" else None, allow_pickle=False)
+        mapped = np.load(root / record["filename"], mmap_mode="r", allow_pickle=False)
+        # Match Stage2's sequential mmap-to-RAM transport before hashing. Forked
+        # workers retain an owned array and never fault cache files during training.
+        values = np.array(mapped, copy=True) if mode == "ram" else mapped
         if (list(values.shape) != record["shape"] or values.shape[0] != len(rows[task_index])
                 or values.dtype != np.float32 or array_digest(values) != record["sha256"]):
             raise ValueError(f"Corrupt decoded cache: {record['filename']}")

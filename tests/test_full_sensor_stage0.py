@@ -429,6 +429,12 @@ def test_decoded_cache_is_lossless_for_all_windows_and_normalizers(
     for key, value in direct.get_normalizer().state_dict().items():
         torch.testing.assert_close(value, cached.get_normalizer().state_dict()[key], rtol=0, atol=0)
     assert not cached.groups[0]["data"]["front"].values.flags.writeable
+    values = cached.groups[0]["data"]["front"].values
+    if mode == "ram":
+        assert not isinstance(values, np.memmap)
+        assert values.flags.owndata
+    else:
+        assert isinstance(values, np.memmap)
     missing = np.flatnonzero(cached.groups[0]["data"]["front"].row_map < 0)
     with pytest.raises(IndexError, match="unused"):
         cached.groups[0]["data"]["front"][missing[0]]

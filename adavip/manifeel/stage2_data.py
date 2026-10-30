@@ -37,8 +37,13 @@ class Stage2SourceDataset(FullSensorManiFeelDataset):
 
 
 def validate_complete_ram_cache(source: Stage2SourceDataset, directory: str,
-                                cache_config: str) -> dict:
-    """Check the cache source and complete array metadata without reading image data."""
+                                cache_config: str, require_full_ram: bool = True) -> dict:
+    """Check complete metadata; require full-cache RAM unless only mapping a subset.
+
+    Benchmark subset readers can disable the RAM-capacity requirement while
+    preserving all source-contract, array-set, shape and dtype validation.
+    Formal cache loading retains the capacity check by default.
+    """
     root = Path(directory)
     manifest = json.loads((root / "manifest.json").read_text())
     frozen_config = OmegaConf.to_container(OmegaConf.load(cache_config).dataset, resolve=True)
@@ -59,7 +64,7 @@ def validate_complete_ram_cache(source: Stage2SourceDataset, directory: str,
         raise ValueError("RAM cache does not contain exactly the nine-task sensor set")
     required = int(manifest["nbytes"]) + 32 * 1024 ** 3
     allocated = os.environ.get("SLURM_MEM_PER_NODE")
-    if allocated and required > int(allocated) * 1024 ** 2:
+    if require_full_ram and allocated and required > int(allocated) * 1024 ** 2:
         raise MemoryError("H200 job memory is too small for complete cache plus 32 GiB headroom")
     for record in records:
         mapped = np.load(root / record["filename"], mmap_mode="r", allow_pickle=False)

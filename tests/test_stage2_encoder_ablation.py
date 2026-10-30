@@ -215,7 +215,7 @@ def test_frozen_guard_and_sampler_cursor(teacher: object, tmp_path: Path) -> Non
 
 
 def test_parallel_ram_cache_matches_raw_and_rejects_corruption(
-    dataset_arguments: dict, tmp_path: Path,
+    dataset_arguments: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise actual Zarr decoding, metadata validation and the parallel RAM loader."""
     from adavip.manifeel.decoded_sensor_cache import build_decoded_cache
@@ -230,6 +230,14 @@ def test_parallel_ram_cache_matches_raw_and_rejects_corruption(
         "_target_": "adavip.manifeel.full_sensor_dataset.FullSensorManiFeelDataset",
         **dataset_arguments}}), cfg_path)
     assert validate_complete_ram_cache(source, str(cache), str(cfg_path)) == manifest
+    with monkeypatch.context() as context:
+        context.setenv("SLURM_MEM_PER_NODE", "1024")
+        with pytest.raises(MemoryError, match="memory is too small"):
+            validate_complete_ram_cache(source, str(cache), str(cfg_path))
+        with pytest.raises(MemoryError, match="memory is too small"):
+            load_complete_ram_cache(source, str(cache), str(cfg_path), workers=2)
+        assert validate_complete_ram_cache(source, str(cache), str(cfg_path),
+                                           require_full_ram=False) == manifest
     before = [source[i] for i in range(len(source))]
     assert load_complete_ram_cache(source, str(cache), str(cfg_path), workers=2) == manifest["nbytes"]
     for i, expected in enumerate(before):

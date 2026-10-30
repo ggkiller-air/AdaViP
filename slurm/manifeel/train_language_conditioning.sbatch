@@ -7,6 +7,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=384G
 #SBATCH --time=4-04:00:00
+#SBATCH --requeue
 #SBATCH --signal=B:USR1@300
 #SBATCH --output=/data/wangzihao/outputs/manifeel/slurm/%x_%j.out
 #SBATCH --error=/data/wangzihao/outputs/manifeel/slurm/%x_%j.err
@@ -19,8 +20,10 @@ cd "${LC_SOURCE}"
 source scripts/manifeel/common.sh
 activate_manifeel
 export OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1
+# Fragmented nodes can spend minutes compacting memory for NumPy's hugepage requests.
+export NUMPY_MADVISE_HUGEPAGE="${NUMPY_MADVISE_HUGEPAGE:-0}"
 export PYTHONDONTWRITEBYTECODE=1
-export TMPDIR="/dev/shm/lc_${SLURM_JOB_ID}"
+export TMPDIR="/public/home/wangzihao/.cache/lc/i/${SLURM_JOB_ID}"
 mkdir -p "${TMPDIR}" "${LC_OUTPUT}"
 exec 9>"${LC_OUTPUT}/training.lock"
 if ! flock -n 9; then exit 0; fi
@@ -65,7 +68,8 @@ forward_stop() {
 }
 trap forward_stop USR1 TERM
 # Core binding and pinned host batches complement the shared read-only RAM cache.
-srun --cpu-bind=cores --unbuffered "${MANIFEEL_PYTHON}" -u \
+srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" --cpu-bind=cores --unbuffered \
+    bash scripts/manifeel/run_language_step.sh "${MANIFEEL_PYTHON}" -u \
     scripts/manifeel/train_language_conditioning.py "${arguments[@]}" &
 trainer_pid=$!
 while true; do

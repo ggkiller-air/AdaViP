@@ -28,10 +28,13 @@
 - Use short, bounded preflight debugging before long training runs. Verify
   training parameters, batch size, CPU availability, DataLoader workers, GPU
   utilization, and checkpoint/log behavior during the preflight run.
-- For future H200 training requests, queue on both `gpu` and `gpux` partitions
-  using each partition's current maximum walltime. Ensure the first allocation
-  cancels the other request so only one copy of a run can train. Check partition
-  limits at submission time; do not shorten the requested walltime arbitrarily.
+- For future H200 training requests, submit one job with
+  `--partition=gpu,gpux`, keeping existing queued/running jobs untouched. Query
+  both partition limits at submission and use their common maximum walltime
+  (currently48hours), with checkpoint continuation and requeue eligibility.
+  Keep per-run locks. Explicitly pass allocated CPUs to the srun step; verify
+  the trainer and worker affinities in an independent performance test before
+  changing production runtime settings.
 - This server is for evaluation; large-scale training runs on `engram`, with
   code synchronized through GitHub. For local GPU evaluations, select only
   GPUs approved by the user, keep separate logs for concurrent processes,
