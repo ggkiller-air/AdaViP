@@ -56,3 +56,56 @@
 - Latest focused rerun, including strict inference-only workspace restore and
   numerical EMA action equivalence:9passed in16.97seconds. Shell syntax and
   diff checks pass; dry-run submission produces exactly eight entries.
+
+## Complete controls and runtime request
+
+- Added USB two-input jobs404624/404625. For paper-view consistency, Sorting
+  uses front + right TacRGB, whereas Plug/USB use wrist + right TacRGB. Canceled
+  only the just-submitted, still-pending wrong-view Sorting404626/404627;
+  corrected front-camera jobs are404632/404633. The original eight jobs were
+  not modified. All twelve retain state tokenizer, batch8/400epochs/seed42.
+- Config/front-view support is committed at652386c. Corrected Sorting uses
+  immutable `additional_source/`, hard-linked from the original snapshot except
+  for the five replaced source/doc/test files. SHA256 inventory is in
+  `additional_source_manifest.json`; `all_twelve_submissions.json` lists exactly
+  twelve active experiment jobs, preserving canceled submissions separately.
+  Ten regressions pass, including two-input7D and task-specific camera checks;
+  actual USB/Sorting batches match[8,16,6]/[8,16,7] and state[8,2,7].
+- Plug404581--404584 passed40-update H200 preflight, strict EMA/normalizer
+  restore, actual16-CPU trainer/worker affinity and first-step gradients, then
+  began formal training. Observed steady throughput before runtime tests:
+  five-input approximately44--45samples/s, two-input63--65samples/s. RAM decode
+  completed before training; DataLoader wait approximately0.2--0.3%.
+- User requested throughput checks without increasing batch and explicitly
+  authorized inert VRAM occupancy per administrator's15% requirement. Current
+  two-input H200 readback was7607/143771MiB,42% instantaneous utilization.
+  CPU supervisor404638 adds a per-run holder within each allocated teacher job,
+  reserving24017601822bytes (16% device capacity) in an independent zero tensor.
+  No model/optimizer/checkpoint/RNG is changed. Existing four holders verified;
+  an actual two-input GPU now uses31129MiB (21.65%). Supervisor follows queued
+  runs and their continuation queue IDs; unrelated jobs are excluded.
+- Independent convolution benchmark temporarily SIGSTOPs only Plug five-input
+  nodrop trainer2722163, benchmarks its allocation at batch8 with unchanged
+  FP32/TF32 flags and identical checkpoint/batch, then SIGCONTs it in finally.
+  Tests compare baseline, cuDNN autotuning and channels-last image backbones;
+  reservation remains active. No production convolution setting changed yet.
+
+## Verified runtime outcome
+
+- Three30-step timing windows per profile at batch8: baseline
+  [46.221,46.373,46.296]samples/s; cuDNN autotune
+  [46.346,46.058,46.859]; channels-last+autotune
+  [46.499,46.577,45.987]. Means46.297/46.421/46.354, gains0.27%/0.12%,
+  within timing variation. Retained production convolution settings. Matmul
+  TF32 stays false and cuDNN TF32 true throughout; first-loss layout difference
+  was approximately3.7e-6. Benchmark held identical batch/checkpoint/optimizer
+  settings and did not increase batch or introduce AMP.
+- `convolution_benchmark/results.json` and `trainer_resumed.json` preserve
+  evidence. Target trainer was paused100.81seconds, then SIGCONT confirmed;
+  no optimizer/RNG/checkpoint state was changed by the independent benchmark.
+- VRAM holders are separate Slurm steps in the corresponding existing GPU
+  allocations, supervised by CPU-only404638 (one CPU/1GiB, maximum5days).
+  Each uses an exclusive per-run lock, no RNG, no recurrent GPU computation;
+  GPU job termination releases its tensor. Actual active step listing confirms
+  trainer and holder share the intended allocated GPU only. Other trainers
+  continued advancing at approximately65samples/s after reservation.

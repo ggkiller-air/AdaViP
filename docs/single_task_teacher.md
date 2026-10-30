@@ -82,3 +82,16 @@ Use `--check-inputs` for dataset/IPC validation without constructing a model or
 requiring a GPU. Omit `--dropout` for the matched no-dropout version. Checkpoints
 contain a device-aware runner config and can use `eval_single_task_checkpoint.py`;
 formal reports must use its `test/mean_score` field.
+
+The administrator-requested minimum GPU-memory occupancy is handled separately
+from model memory: `reserve_teacher_gpu_memory.py` follows only these twelve
+runs and their continuation IDs, holding a zero tensor of16% GPU capacity in
+an overlapping one-CPU step. It changes no model, optimizer, batch or checkpoint.
+The quiet CPU supervisor also handles currently queued runs after allocation.
+Actual two-input H200 occupancy after reservation was31129/143771MiB (21.65%).
+
+At batch8, RAM-backed production observed about44--45samples/s for five inputs
+and63--65 for two inputs, with0.2--0.3% loader wait. Independent five-input
+benchmarks measured46.30samples/s baseline,46.42 with cuDNN autotuning,46.35
+with autotuning/channels-last. Gains were below0.3%, so production retains its
+existing convolution settings (cuDNN TF32 enabled, matmul TF32 disabled).
