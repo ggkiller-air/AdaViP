@@ -54,8 +54,9 @@ class SingleTaskTeacherEncoder(nn.Module):
         self.shape_meta = copy.deepcopy(shape_meta)
         self.image_keys = tuple(key for key, item in shape_meta["obs"].items() if item["type"] == "rgb")
         valid_five = ("front", "side", "wrist", "left_tactile_camera_taxim", "right_tactile_camera_taxim")
-        if self.image_keys not in (valid_five, ("wrist", "right_tactile_camera_taxim")):
-            raise ValueError("Expected ordered five-sensor or wrist/right-TacRGB inputs")
+        valid_pairs = (("wrist", "right_tactile_camera_taxim"), ("front", "right_tactile_camera_taxim"))
+        if self.image_keys not in (valid_five, *valid_pairs):
+            raise ValueError("Expected five sensors or one camera and right TacRGB")
         if set(shape_meta["obs"]) != {*self.image_keys, "state"}:
             raise ValueError("State is required; language and extra inputs are unsupported")
         self.n_obs_steps, self.token_dim = n_obs_steps, token_dim

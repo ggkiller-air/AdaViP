@@ -28,7 +28,8 @@ def make_config(task_id: str, sensors: str, dropout: bool, output: Path,
     if sensors == "five":
         keys = ("front", "side", "wrist", "left_tactile_camera_taxim", "right_tactile_camera_taxim")
     elif sensors == "two":
-        keys = ("wrist", "right_tactile_camera_taxim")
+        camera = "front" if task_id == "ball_sorting" else "wrist"
+        keys = (camera, "right_tactile_camera_taxim")
     else:
         raise ValueError("sensors must be five or two")
     cfg.shape_meta = {"obs": {**{key: {"shape": [3, 256, 256], "type": "rgb"} for key in keys},

@@ -1,4 +1,4 @@
-"""Submit the approved eight independent batch8 single-task teacher runs."""
+"""Submit the twelve independent batch8 single-task teacher runs."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def main() -> None:
         raise FileExistsError(f"Submission manifest exists; inspect before resubmitting: {manifest}")
     records = []
     for task, short in (("power_plug_insertion", "plug"), ("usb_insertion", "usb"), ("ball_sorting", "sorting")):
-        for sensors in (("five", "two") if short == "plug" else ("five",)):
+        for sensors in ("five", "two"):
             for dropout in (0, 1):
                 name = f"{short}_{sensors}_{'drop40' if dropout else 'nodrop'}_batch8_ep400_seed42"
                 output = args.output / name

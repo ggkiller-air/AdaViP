@@ -1,4 +1,4 @@
-"""Regression tests for the eight-run single-task teacher protocol."""
+"""Regression tests for the single-task teacher protocol."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def test_mask_contract_and_always_present_state(sensors: str, dimensions: int) -
     assert not torch.equal(policy.obs_encoder(batch["obs"], presence), policy.obs_encoder(altered, presence))
 
 
-@pytest.mark.parametrize("sensors,action_dim", [("five", 6), ("five", 7), ("two", 6)])
+@pytest.mark.parametrize("sensors,action_dim", [("five", 6), ("five", 7), ("two", 6), ("two", 7)])
 def test_all_masks_backward_and_paired_inference_contract(sensors: str, action_dim: int) -> None:
     policy, batch = tiny_policy(sensors, action_dim)
     for index in range(len(policy.condition_names)):
@@ -206,9 +206,9 @@ def test_exact_mid_epoch_resume_model_ema_adam_scheduler_rng(tiny_store, tmp_pat
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
-def test_all_eight_configs_match_requested_official_optimization(tmp_path: Path) -> None:
+def test_all_twelve_configs_match_requested_official_optimization(tmp_path: Path) -> None:
     for task in ("power_plug_insertion", "usb_insertion", "ball_sorting"):
-        for sensors in (("five", "two") if task == "power_plug_insertion" else ("five",)):
+        for sensors in ("five", "two"):
             for dropout in (False, True):
                 cfg = make_config(task, sensors, dropout, tmp_path / task)
                 assert cfg.training.num_epochs == 400
@@ -218,3 +218,10 @@ def test_all_eight_configs_match_requested_official_optimization(tmp_path: Path)
                 assert cfg.policy.full_input_probability == (0.6 if dropout else 1.)
                 assert "task_embedding" not in cfg.shape_meta.obs
                 assert cfg.shape_meta.action.shape[0] == (7 if task == "ball_sorting" else 6)
+                if sensors == "two":
+                    camera = "front" if task == "ball_sorting" else "wrist"
+                    assert set(cfg.shape_meta.obs) == {camera, "right_tactile_camera_taxim", "state"}
+                    shape = OmegaConf.to_container(cfg.shape_meta)
+                    encoder = SingleTaskTeacherEncoder(shape, token_dim=8, image_feature_dim=8,
+                        rgb_model=nn.Sequential(nn.Conv2d(3, 8, 1), nn.AdaptiveAvgPool2d(1), nn.Flatten()))
+                    assert encoder.image_keys == (camera, "right_tactile_camera_taxim")

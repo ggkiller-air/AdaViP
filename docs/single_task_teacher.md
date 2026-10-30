@@ -1,6 +1,6 @@
 # Single-task DP Teachers: batch8 / 400 epochs
 
-Eight independent seed42 runs:
+Twelve independent seed42 runs:
 
 | Task | Image inputs | Full / removal probability |
 | --- | --- | --- |
@@ -8,6 +8,8 @@ Eight independent seed42 runs:
 | USB Insertion | same five inputs | 100/0 and 60/40 |
 | Ball Sorting | same five inputs | 100/0 and 60/40 |
 | Power Plug | wrist, right TacRGB | 100/0 and 60/40 |
+| USB Insertion | wrist, right TacRGB | 100/0 and 60/40 |
+| Ball Sorting | front, right TacRGB | 100/0 and 60/40 |
 
 Every run includes normalized robot state, with no language. Each independent
 randomly initialized ResNet18/GroupNorm outputs 512D per frame; each two-frame
@@ -18,7 +20,7 @@ No Utility, HyperNet, attention or future-prediction modules are included.
 
 Five-input dropout draws full with probability0.6; each of five individual
 image removals, all-camera removal and both-tactile removal has probability
-0.4/7. Two-input dropout uses full0.6, wrist removal0.2, tactile removal0.2.
+0.4/7. Two-input dropout uses full0.6, camera removal0.2, tactile removal0.2.
 Exactly one condition is drawn per sample and shared across both history
 frames. Robot state remains present. Removed independent tokens are replaced
 before fusion with learned missing tokens, with explicit presence flags.
