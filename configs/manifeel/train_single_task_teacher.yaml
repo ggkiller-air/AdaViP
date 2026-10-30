@@ -1,0 +1,73 @@
+_target_: adavip.manifeel.single_task_teacher_workspace.SingleTaskTeacherWorkspace
+name: single_task_teacher_batch8_ep400
+output_dir: null
+resume: null
+horizon: 16
+n_obs_steps: 2
+n_action_steps: 8
+shape_meta: null
+task: null
+policy:
+  _target_: adavip.manifeel.single_task_teacher.SingleTaskTeacherPolicy
+  shape_meta: ${shape_meta}
+  obs_encoder:
+    _target_: adavip.manifeel.single_task_teacher.SingleTaskTeacherEncoder
+    shape_meta: ${shape_meta}
+    n_obs_steps: ${n_obs_steps}
+    token_dim: 256
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    variance_type: fixed_small
+    clip_sample: true
+    prediction_type: epsilon
+  full_input_probability: 0.6
+  horizon: ${horizon}
+  n_obs_steps: ${n_obs_steps}
+  n_action_steps: ${n_action_steps}
+  num_inference_steps: 100
+  diffusion_step_embed_dim: 128
+  down_dims: [512, 1024, 2048]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+ema:
+  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
+  update_after_step: 0
+  inv_gamma: 1.0
+  power: 0.75
+  min_value: 0.0
+  max_value: 0.9999
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.00008
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-6
+dataloader:
+  batch_size: 8
+  num_workers: 3
+  pin_memory: true
+  persistent_workers: false
+  prefetch_factor: 1
+  timeout: 180
+val_dataloader:
+  batch_size: 8
+  num_workers: 1
+  pin_memory: true
+  persistent_workers: false
+  prefetch_factor: 1
+  timeout: 180
+training:
+  use_ema: true
+  seed: 42
+  device: cuda:0
+  num_epochs: 400
+runtime:
+  log_every_steps: 20
+  checkpoint_every_steps: 1000
+  checkpoint_every_epochs: 50
+  validate_every: 10
