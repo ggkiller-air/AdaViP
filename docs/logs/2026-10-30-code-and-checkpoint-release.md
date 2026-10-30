@@ -20,5 +20,9 @@
   `/data/wangzihao/outputs/manifeel/modelscope_uploads/stage2_s234_20261030/files/`.
   Local SHA256 manifest and upload log are in its parent directory. Remote
   prefix: `ggkiller/Manifeel-ckpts1018/stage2_encoder_ablation_t2_batch32_seed42_20261028/`.
-  Upload is in progress at this entry; completion requires all twelve remote
-  byte sizes and SHA256 values to match the local manifest.
+  Upload completed at12:55:34CST:12committed,0failed,0remote deletions,
+  1028.2seconds. At12:55:35 all twelve remote byte sizes and SHA256 values
+  matched the local manifest; `verification.json` and `SUCCESS.json` preserve
+  the result. Only the requested checkpoint files were uploaded.
+- GitHub main was fast-forwarded from d78e75c to8775bbb after validation;
+  this final documentation update records the completed ModelScope release.
