@@ -1,0 +1,175 @@
+_target_: adavip.manifeel.stage1_future_workspace.Stage1FutureWorkspace
+variant: l1
+name: stage1_future_k4_t2_batch32_ep100
+output_dir: /data/wangzihao/outputs/manifeel/stage1_future_k4_batch32/experiment_${experiment}
+resume: null
+dataset_root: /data/wangzihao/datasets/manifeel
+task_embedding_path: /data/wangzihao/outputs/manifeel/task_embeddings/clip_vit_b32_9task.npz
+horizon: 16
+n_obs_steps: 2
+n_action_steps: 8
+shape_meta:
+  obs:
+    front:
+      shape:
+      - 3
+      - 256
+      - 256
+      type: rgb
+    side:
+      shape:
+      - 3
+      - 256
+      - 256
+      type: rgb
+    wrist:
+      shape:
+      - 3
+      - 256
+      - 256
+      type: rgb
+    left_tactile_camera_taxim:
+      shape:
+      - 3
+      - 320
+      - 240
+      type: rgb
+    right_tactile_camera_taxim:
+      shape:
+      - 3
+      - 320
+      - 240
+      type: rgb
+    state:
+      shape:
+      - 7
+      type: low_dim
+    task_embedding:
+      shape:
+      - 512
+      type: low_dim
+  action:
+    shape:
+    - 7
+dataset:
+  _target_: adavip.manifeel.stage1_future_dataset.Stage1FutureDataset
+  shape_meta: ${shape_meta}
+  dataset_root: ${dataset_root}
+  task_embedding_path: ${task_embedding_path}
+  task_specs: null
+  horizon: ${horizon}
+  n_obs_steps: ${n_obs_steps}
+  n_action_steps: ${n_action_steps}
+  val_ratio: 0.02
+  max_train_episodes: 50
+  seed: ${training.seed}
+  dataset_version: manifeel_local_nine_task_2026-10-17
+  source_frequency_hz: null
+  decoded_cache_dir: /data/wangzihao/cache/manifeel/full_sensor_float32_9task_v1_seed42_20261017
+  decoded_cache_mode: ram
+  experiment: ${experiment}
+  future_offset: ${future.offset}
+  raw_resolution: ${future.raw_resolution}
+policy:
+  _target_: adavip.manifeel.reference_diffusion_policy.FullSensorReferencePolicy
+  obs_encoder:
+    _target_: adavip.manifeel.language_conditioned_obs_encoder.LanguageConditionedObsEncoder
+    shape_meta: ${shape_meta}
+    variant: ${variant}
+    n_obs_steps: ${n_obs_steps}
+    token_dim: 256
+    image_feature_dim: 512
+    use_group_norm: true
+    head_seed: 9042
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    variance_type: fixed_small
+    clip_sample: true
+    prediction_type: epsilon
+  horizon: ${horizon}
+  n_obs_steps: ${n_obs_steps}
+  n_action_steps: ${n_action_steps}
+  num_inference_steps: 100
+  full_input_probability: 1.0
+  mask_weights:
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  diffusion_step_embed_dim: 128
+  down_dims:
+  - 512
+  - 1024
+  - 2048
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 8.0e-05
+  betas:
+  - 0.95
+  - 0.999
+  eps: 1.0e-08
+  weight_decay: 1.0e-06
+ema:
+  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
+  update_after_step: 0
+  inv_gamma: 1.0
+  power: 0.75
+  min_value: 0.0
+  max_value: 0.9999
+dataloader:
+  batch_size: 32
+  num_workers: 8
+  timeout: 180
+  shuffle: false
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 1
+val_dataloader: {}
+training:
+  device: cuda:0
+  seed: 42
+  num_epochs: 100
+  use_ema: true
+  lr_warmup_steps: 500
+  gradient_clip_norm: 1.0
+  checkpoint_epochs:
+  - 20
+  - 40
+  - 60
+  - 80
+  - 100
+  checkpoint_every_steps: 1000
+  log_every_steps: 20
+diagnostics:
+  samples_per_task: 32
+  noise_repeats: 4
+  gradient_samples: 8
+  gradient_every: 5
+  batch_size: 8
+  seed: 2042
+runtime:
+  expected_samples: 71265
+  expected_episodes: 400
+  stop_after_steps: 0
+experiment: B
+future:
+  offset: 4
+  raw_resolution: 64
+  momentum: 0.996
+  head_seed: 17042
+  loss_weight: null
+  calibration_batches: 8
+  gradient_target_ratio: 0.1
+  gradient_every_steps: 1000
