@@ -24,3 +24,20 @@
   interface. Full cache/RNG/init/EMA steps remain controlled across profiles.
 - Four helper tests passed in7.91s; Python compilation and shell syntax passed.
   GPU execution must wait for its own allocation; no performance gain claimed.
+
+## Independent benchmark submitted
+
+- Final helper recheck4passed in6.04s. Committed/pushed implementation to main
+  at5ff79ee. Frozen source and SHA256 inventory are stored at
+  `/data/wangzihao/outputs/manifeel/stage1_future_runtime_benchmark_20261031_140201/`.
+- Submitted407932, nice10000, oneH200/32CPU/384GiB, gpu,gpux/common48h with
+  requeue and per-output lock. Currently PENDING. Benchmarks read only the
+  production launch configs and sanity initialization metadata, create fresh
+  models, and write exclusively to the separate benchmark root. Formal B--E
+  code/config/checkpoints/loss weights were not changed.
+- Main future weights remain B.25332773311046375, C.019863649098324596,
+  D.17650865668093083, E.03004826433718963. The shared-gradient contribution
+  target is approximately10% from the previous eight-batch calibration.
+- Results will be `report.json`, with per-case `result.json` and reference
+  gradients. CPU supervisor407906 continues to guard formal B--E memory;
+  benchmark407932 starts its own independent16% holder when allocated.
