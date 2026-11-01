@@ -1,0 +1,55 @@
+name: openvitac_gelsight_stage0
+schema: uvip.openvitac.v1
+dataset:
+  _target_: adavip.openvitac.dataset.OpenViTacDataset
+  root: /data/wangzihao/datasets/openvitac/converted/uvip_v1_5fb2757b
+  split: train
+  cache_episodes: 1
+policy:
+  _target_: adavip.openvitac.policy.OpenViTacPolicy
+  obs_encoder:
+    _target_: adavip.openvitac.encoder.OpenViTacObsEncoder
+    shape_meta:
+      obs:
+        head: {shape: [3, 256, 256], type: rgb}
+        wrist: {shape: [3, 256, 256], type: rgb}
+        tactile_left: {shape: [3, 240, 320], type: rgb}
+        tactile_right: {shape: [3, 240, 320], type: rgb}
+        state: {shape: [8], type: low_dim}
+        task_embedding: {shape: [512], type: low_dim}
+      action: {shape: [8]}
+    n_obs_steps: 2
+    token_dim: 256
+    image_feature_dim: 512
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    clip_sample: true
+    prediction_type: epsilon
+  horizon: 16
+  n_obs_steps: 2
+  n_action_steps: 8
+  num_inference_steps: 100
+  full_input_probability: 0.8
+  down_dims: [512, 1024, 2048]
+  diffusion_step_embed_dim: 128
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+stage05:
+  utility_dim: 8
+  conditions: [full, V1, V2, T1, T2, P, L, vision, tactile]
+  large_scale_generation_enabled: false
+stage1:
+  future_offset: 4
+  future_offset_nominal_seconds: 0.06666666666666667
+  tactile_heads: 2
+  vision_tactile_heads: 4
+stage2:
+  image_hypernets: 4
+  sensor_tokens: 6
+  utility_dim: 8
+  unmodulated: [state, task_embedding]
