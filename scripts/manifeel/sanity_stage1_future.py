@@ -25,21 +25,27 @@ from scripts.manifeel.language_runtime import configure_profile
 
 
 def main() -> None:
-    """Check real batch32 updates, all five ResNets, target EMA and checkpoint IO."""
+    """Check configured real batches, ResNets, target EMA and checkpoint IO."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--steps", type=int, default=4)
+    parser.add_argument("--config", type=Path, default=Path(__file__).resolve().parents[2]
+                        / "configs/manifeel/train_stage1_future.yaml")
+    parser.add_argument("--experiments", default="BCDE")
     args = parser.parse_args()
     if not torch.cuda.is_available() or "H200" not in torch.cuda.get_device_name(0):
         raise RuntimeError("Sanity requires an allocated H200")
-    root = Path(__file__).resolve().parents[2]
-    cfg_base = OmegaConf.load(root / "configs/manifeel/train_stage1_future.yaml")
+    if not args.experiments or any(value not in "BCDE" for value in args.experiments) or args.steps < 1:
+        raise ValueError("Expected B--E and at least one preflight update")
+    cfg_base = OmegaConf.load(args.config)
+    batch_size = int(cfg_base.dataloader.batch_size)
     args.output.mkdir(parents=True, exist_ok=True)
-    flags = configure_profile("tf32_deterministic")
+    flags = configure_profile("stage0")
     device = torch.device("cuda:0")
     report = {"gpu": torch.cuda.get_device_name(0), "runtime": flags,
               "source_fingerprint": future_source_fingerprint(),
-              "trainer_affinity": sorted(os.sched_getaffinity(0)), "experiments": {}}
+              "trainer_affinity": sorted(os.sched_getaffinity(0)), "experiments": {},
+              "batch_size": batch_size}
     shared = hydra.utils.instantiate(cfg_base.dataset)
     started = time.perf_counter()
     shared.load_ram_cache()
@@ -47,14 +53,14 @@ def main() -> None:
     # Independent worker/IPC performance check using the same data and initialization.
     affinity_dir = args.output / "affinity"
     os.environ["STAGE1_FUTURE_AFFINITY_DIR"] = str(affinity_dir)
-    loader = DataLoader(shared, batch_size=32, num_workers=8, pin_memory=True,
+    loader = DataLoader(shared, batch_size=batch_size, num_workers=8, pin_memory=True,
                         worker_init_fn=initialize_future_worker, prefetch_factor=1,
                         generator=torch.Generator().manual_seed(940042))
     started = time.perf_counter()
     iterator = iter(loader)
     for _ in range(3):
         batch = next(iterator)
-        assert len(batch["action"]) == 32
+        assert len(batch["action"]) == batch_size
     report["worker_test_seconds"] = time.perf_counter() - started
     del iterator, loader, batch
     worker_records = [json.loads(p.read_text()) for p in affinity_dir.glob("worker_*.json")]
@@ -63,7 +69,7 @@ def main() -> None:
     assert all(set(r["actual_affinity"]).issubset(report["trainer_affinity"]) for r in worker_records)
     report["workers"] = worker_records
     initial_hashes = set()
-    for experiment in "BCDE":
+    for experiment in args.experiments:
         print(json.dumps({"event": "sanity_start", "experiment": experiment}), flush=True)
         cfg = copy.deepcopy(cfg_base)
         cfg.experiment, cfg.output_dir = experiment, str(args.output / experiment)
@@ -83,8 +89,12 @@ def main() -> None:
         noise = torch.Generator(device=device).manual_seed(300042)
         workspace._noise_generator = noise
         before = normalizer_fingerprint(policy)
-        calibration = calibrate_future_weight(policy, auxiliary, dataset, device, batch_size=32,
-                                              batches=cfg.future.calibration_batches)
+        if cfg.future.loss_weight is None:
+            calibration = calibrate_future_weight(policy, auxiliary, dataset, device, batch_size=batch_size,
+                                                  batches=cfg.future.calibration_batches)
+        else:
+            calibration = {"weight": float(cfg.future.loss_weight), "source": "fixed configuration",
+                           "optimizer_steps": 0, "target_ema_updates": 0}
         assert normalizer_fingerprint(policy) == before
         workspace.future_weight, workspace.calibration = calibration["weight"], calibration
         (output / "calibration.json").write_text(json.dumps(calibration, indent=2) + "\n")
@@ -93,9 +103,10 @@ def main() -> None:
         dataset_indices = []
         previous = 0
         for length in dataset.task_lengths:
-            dataset_indices.extend(range(previous + 4, previous + 8))
+            dataset_indices.extend(range(previous + 4, previous + 12))
             previous += length
-        dataset_indices = dataset_indices[:32]
+        dataset_indices = dataset_indices[:batch_size]
+        assert len(dataset_indices) == batch_size
         batch = torch.utils.data.default_collate([dataset[i] for i in dataset_indices])
         assert (batch["future_index"][batch["future_valid"]] ==
                 batch["future_anchor"][batch["future_valid"]] + 4).all()
@@ -111,11 +122,11 @@ def main() -> None:
             workspace.optimizer.zero_grad(set_to_none=True)
             sample = policy.prepare_denoising_sample(batch, generator=noise)
             terms = stage1_losses(policy, auxiliary, batch, sample)
-            assert terms["z_t"].shape == (32, 256)
+            assert terms["z_t"].shape == (batch_size, 256)
             if step == 0:
                 with torch.no_grad():
                     original = policy.compute_loss_per_sample(
-                        batch, torch.zeros(32, dtype=torch.long, device=device), sample)
+                        batch, torch.zeros(batch_size, dtype=torch.long, device=device), sample)
                 torch.testing.assert_close(terms["action_per_sample"], original, rtol=0, atol=0)
                 del original
             diagnostics = gradient_diagnostics(terms, policy, workspace.future_weight,
@@ -168,7 +179,7 @@ def main() -> None:
     report["identical_initialization"] = True
     report["passed"] = True
     (args.output / "report.json").write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
-    (args.output / "PASS.json").write_text(json.dumps({"passed": True, "groups": "BCDE"}) + "\n")
+    (args.output / "PASS.json").write_text(json.dumps({"passed": True, "groups": args.experiments}) + "\n")
 
 
 if __name__ == "__main__":

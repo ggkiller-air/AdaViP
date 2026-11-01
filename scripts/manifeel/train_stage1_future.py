@@ -13,6 +13,7 @@ from omegaconf import OmegaConf
 
 from adavip.manifeel.stage1_future_workspace import Stage1FutureWorkspace
 from scripts.manifeel.language_runtime import configure_profile
+from scripts.manifeel.l1_training_protocol import validate_l1_training_protocol
 
 
 def main() -> None:
@@ -26,15 +27,13 @@ def main() -> None:
     OmegaConf.set_struct(cfg, True)
     cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist(args.overrides))
     OmegaConf.resolve(cfg)
-    if (cfg.experiment not in ("B", "C", "D", "E") or cfg.variant != "l1"
-            or cfg.dataloader.batch_size != 32 or cfg.training.num_epochs != 100
-            or cfg.future.offset != 4 or cfg.optimizer.lr != 8e-5
-            or list(cfg.training.checkpoint_epochs) != [20, 40, 60, 80, 100]):
-        raise ValueError("Expected B--E, L1, k4, batch32, E100, LR8e-5, snapshots every20")
+    validate_l1_training_protocol(cfg)
     if (not torch.cuda.is_available() or torch.cuda.device_count() != 1
             or "H200" not in torch.cuda.get_device_name(0)):
         raise RuntimeError("Training requires exactly one allocated H200")
-    profile = os.environ.get("LC_RUNTIME_PROFILE", "tf32_deterministic")
+    profile = os.environ.get("LC_RUNTIME_PROFILE", "stage0")
+    if profile != "stage0":
+        raise ValueError("Restored L1 training requires the original final stage0 runtime")
     runtime = {"profile": profile, **configure_profile(profile),
                "job_id": os.environ.get("SLURM_JOB_ID"),
                "trainer_affinity": sorted(os.sched_getaffinity(0)),

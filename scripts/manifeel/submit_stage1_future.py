@@ -49,7 +49,7 @@ def main() -> None:
             command = [sys.executable, str(source / "scripts/manifeel/submit_partition_job.py"),
                        "--prefix", "S1F", "--source", str(source), "--output", str(output),
                        "--script", "slurm/manifeel/stage1_future.sbatch",
-                       "--name", f"s1f_{experiment}_k4_batch32_ep100",
+                       "--name", f"s1f_{experiment}_k4_batch{cfg.dataloader.batch_size}_ep{cfg.training.num_epochs}",
                        "--set", "PHASE=train", "--set", f"EXPERIMENT={experiment}",
                        "--set", f"CONFIG={path}"]
             result = subprocess.run(command, check=True, text=True, capture_output=True)

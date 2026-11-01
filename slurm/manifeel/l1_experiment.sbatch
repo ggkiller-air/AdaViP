@@ -64,6 +64,6 @@ done
 if [[ -f "${L1X_OUTPUT}/SAFE_STOP.json" && ! -f "${L1X_OUTPUT}/COMPLETE.json" ]]; then
     "${MANIFEEL_PYTHON}" scripts/manifeel/submit_partition_job.py \
         --prefix L1X --source "${L1X_SOURCE}" --output "${L1X_OUTPUT}" \
-        --script slurm/manifeel/l1_experiment.sbatch --name "l1_${L1X_MODE}_continuation" \
+        --script slurm/manifeel/l1_experiment.sbatch --name "l1_${L1X_MODE}_batch64_ep500" \
         --dependency "afterok:${SLURM_JOB_ID}" --set "MODE=${L1X_MODE}" --set "CONFIG=${L1X_CONFIG}"
 fi

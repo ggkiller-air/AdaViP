@@ -8,6 +8,14 @@ fixed checkpoints E20/E40/E60/E80/E100, atomic rolling latest and exact resume.
 The runtime matches the latest original L1 profile: FP32, cuDNN TF32 enabled,
 cuDNN deterministic=false, matmul TF32 disabled, no autotune.
 
+The November1 rerun restores the original L1 shared protocol: batch64,
+500epochs, fixed E50/E100/E200/E300/E400/E500 snapshots and the same500-update
+warmup followed by a557000-update total cosine schedule. The defaults and
+training entry points now enforce these restored settings. The October31
+batch32/E100 artifacts and their frozen source remain the historical experiment
+described above. `submit_l1_restored.py` compares all five new launch configs
+against the actual original L1 config before submitting any job.
+
 Input sampling is90% full and10% uniformly divided among seven individual
 removals (V1,V2,V3,T1,T2,P,L) and two group removals (vision,tactile). Thus10%
 is the probability that a sample uses a removal condition, not a per-token

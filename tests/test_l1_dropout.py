@@ -99,8 +99,8 @@ def test_exact_dropout_optimizer_ema_resume(data_args: dict, tmp_path: Path) -> 
 def test_formal_config() -> None:
     cfg = OmegaConf.load(Path(__file__).resolve().parents[1] / "configs/manifeel/train_l1_dropout.yaml")
     assert cfg.variant == "l1" and cfg.policy.full_input_probability == 0.9
-    assert cfg.dataloader.batch_size == 32 and cfg.training.num_epochs == 100
-    assert list(cfg.training.checkpoint_epochs) == [20, 40, 60, 80, 100]
+    assert cfg.dataloader.batch_size == 64 and cfg.training.num_epochs == 500
+    assert list(cfg.training.checkpoint_epochs) == [50, 100, 200, 300, 400, 500]
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Normalizer device regression requires CUDA")
@@ -109,6 +109,7 @@ def test_preflight_cuda_normalizer_and_no_updates(data_args: dict, tmp_path: Pat
     import json
 
     cfg = dropout_config(data_args, tmp_path / "gpu_preflight")
+    cfg.dataloader.batch_size = 64
     Path(cfg.output_dir).mkdir()
     workspace = L1DropoutWorkspace(cfg, cfg.output_dir)
     initial = {name: value.detach().cpu().clone() for name, value in workspace.model.named_parameters()}
@@ -126,5 +127,6 @@ def test_preflight_cuda_normalizer_and_no_updates(data_args: dict, tmp_path: Pat
     assert torch.equal(cpu_rng, torch.get_rng_state())
     assert torch.equal(cuda_rng, torch.cuda.get_rng_state(0))
     report = json.loads((Path(cfg.output_dir) / "preflight.json").read_text())
+    assert report["batch_size"] == 64
     assert report["passed"] and report["normalizer_device"] == "cuda:0"
     assert report["normalized_observation_device"] == "cuda:0"

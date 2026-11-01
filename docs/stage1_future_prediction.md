@@ -1,5 +1,17 @@
 # Stage 1 future supervision on L1
 
+The November1 rerun uses original-L1 batch64/500epochs with fixed snapshots
+E50/E100/E200/E300/E400/E500,500-update warmup and full-budget cosine decay.
+FP32 runtime matches original L1's final `stage0` profile (cuDNN TF32 on,
+deterministic off, matmul TF32/autotune off). The four previously calibrated
+Future weights stay fixed. Each new H200 allocation checks batch64 worker
+affinity, four independent preflight updates, gradients, target EMA and
+checkpoint writes before a fresh formal initialization. The historical
+October31 batch32/E100 protocol below remains documented for its existing
+artifacts; current config defaults and entry-point guards use the restored
+protocol. `submit_l1_restored.py` queues these four groups and L1 dropout only
+after comparing their shared settings with the actual original L1 config.
+
 The unchanged L1 policy compresses three visual streams, two TacRGB streams and
 proprioception into a 256D `z_t`. The action condition is still
 `Linear(768,256) -> SiLU -> Linear(256,256)` on `[z_t, language512]`.

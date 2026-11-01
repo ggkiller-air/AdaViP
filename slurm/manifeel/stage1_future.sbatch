@@ -18,7 +18,7 @@ source scripts/manifeel/common.sh
 activate_manifeel
 export OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1
 export NUMPY_MADVISE_HUGEPAGE=0 PYTHONDONTWRITEBYTECODE=1
-export LC_RUNTIME_PROFILE=tf32_deterministic
+export LC_RUNTIME_PROFILE=stage0
 export TMPDIR="/public/home/wangzihao/.cache/s1f/i/${SLURM_JOB_ID}"
 export STAGE1_FUTURE_AFFINITY_DIR="${S1F_OUTPUT}/affinity_${SLURM_JOB_ID}"
 mkdir -p "${TMPDIR}" "${S1F_OUTPUT}"
@@ -54,6 +54,12 @@ else
     arguments=(scripts/manifeel/train_stage1_future.py --config "${S1F_CONFIG}")
     if [[ -f "${S1F_OUTPUT}/checkpoints/latest.ckpt" ]]; then
         arguments+=("resume=${S1F_OUTPUT}/checkpoints/latest.ckpt")
+    else
+        # A separate process discards preflight updates before seed42 formal initialization.
+        srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" --cpu-bind=cores --unbuffered \
+            bash scripts/manifeel/run_language_step.sh "${MANIFEEL_PYTHON}" -u \
+            scripts/manifeel/sanity_stage1_future.py --config "${S1F_CONFIG}" \
+            --output "${S1F_OUTPUT}/preflight_${SLURM_JOB_ID}" --experiments "${S1F_EXPERIMENT}"
     fi
 fi
 srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" --cpu-bind=cores --unbuffered \
@@ -67,7 +73,7 @@ done
 if [[ "${S1F_PHASE}" != sanity && -f "${S1F_OUTPUT}/SAFE_STOP.json" && ! -f "${S1F_OUTPUT}/COMPLETE.json" ]]; then
     "${MANIFEEL_PYTHON}" scripts/manifeel/submit_partition_job.py \
         --prefix S1F --source "${S1F_SOURCE}" --output "${S1F_OUTPUT}" \
-        --script slurm/manifeel/stage1_future.sbatch --name "s1f_${S1F_EXPERIMENT}_k4_batch32" \
+        --script slurm/manifeel/stage1_future.sbatch --name "s1f_${S1F_EXPERIMENT}_k4_batch64_ep500" \
         --dependency "afterok:${SLURM_JOB_ID}" --set PHASE=train \
         --set "EXPERIMENT=${S1F_EXPERIMENT}" --set "CONFIG=${S1F_CONFIG}"
 fi
