@@ -34,3 +34,24 @@
   warnings in201.95s. Shell syntax and diff whitespace checks pass. No GPU
   preflight result is claimed at this preparation entry. Logs:
   `/public/home/wangzihao/.cache/l1r/`.
+
+## Submitted five jobs
+
+- Synced implementation and audit to GitHub branch
+  `experiment/single_task_teacher_batch8_20261030`; frozen source commit
+  `852e624`. All697copied files (including pinned Diffusion Policy) were
+  SHA256-verified and made read-only. Source inventory/revisions and both
+  pytest logs are in the run root. Submodule revisions are unchanged.
+- Submitted B412402, C412403, D412404, E412405, dropout412407. Independent
+  scheduler audit confirms each requests one NVIDIAH200,32CPUs/384GiB,
+  gpu,gpux, queried common48h and Requeue=1. An allocated job's Partition
+  resolves to its chosen partition; original dual-partition requests remain
+  recorded in each queue JSON. `submissions.json` and `scheduler_audit.json`
+  preserve IDs, resources, commands and logs. All five launch configs were
+  rechecked against the saved original L1 config after submission; resume=null.
+- At19:15CST B is RUNNING onserver13, loading the full RAM cache for its
+  independent batch64 preflight; stderr is empty. C/D/E/dropout are PENDING /
+  AssocGrpGRES. No formal optimizer update or passed GPU preflight claimed yet.
+  Before GPU work, both allocation-local and independent SSH nvidia-smi reads
+  show NVIDIAH200143771MiB,0MiBused/0%utilization and no compute process on
+  the allocated device. Existing CPU interactive404454 remains unchanged.
