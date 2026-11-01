@@ -41,3 +41,33 @@
 - Results will be `report.json`, with per-case `result.json` and reference
   gradients. CPU supervisor407906 continues to guard formal B--E memory;
   benchmark407932 starts its own independent16% holder when allocated.
+
+## Completed runtime results
+
+-407932 COMPLETED,57m56s,ExitCode0:0. All36cases passed,0errors; both workloads
+  shared one initialization hash and every case had8distinct worker CPU masks.
+  Full cache load/hash76.03s. Production settings were not changed.
+- Median samples/s (B/E) and change relative to each workload's baseline:
+  baseline180.48/149.47; fusedAdamW190.50/159.39(+5.55%/+6.64%);
+  compileU-Net182.41/164.59(+1.07%/+10.12%);
+  autotune182.80/156.14(+1.28%/+4.46%);
+  matmulTF32179.55/156.32(-0.52%/+4.59%);
+  BF16165.56/144.95(-8.27%/-3.03%);
+  channels_last167.70/147.19(-7.09%/-1.52%);
+  BF16+layout155.61/137.40(-13.78%/-8.07%);
+  BF16+layout+fused+compile172.64/144.00(-4.35%/-3.66%).
+- FusedAdamW improved both paired repeats: B+5.63/+5.47%, E+10.30/+3.17%.
+  Its initial loss matched baseline; initial fusion gradient relative difference
+  was zero or <=3.5e-7. This is the most consistent candidate measured here.
+- Compile was variable: B-2.51/+4.69%, E+18.36/+2.31%. First B compilation
+  warmup319.80s versus baseline35.47s; cached compile warmups62--65s. No
+  blanket10% compile gain is established from two repeats.
+- BF16 first-loss relative difference <=0.0356%, initial fusion gradient cosine
+  approximately0.99994--0.99995, relative gradient error1.0--1.1%; all updates
+  finite, but no throughput benefit in this stack/batch32. Most loader waits
+  were about0.1%; no operator profile was taken to attribute the slowdown.
+- Recomputed initial-gradient cosine in float64: raw float32 cosine reports
+  slightly exceeded1 even for self-comparison. Preserved raw reports; derived
+  numerical checks in `analysis_summary.json` and readable table in `results.md`
+  under the benchmark root. These are update timings excluding checkpointing/
+  epoch diagnostics, with no rollout or policy-quality claim.

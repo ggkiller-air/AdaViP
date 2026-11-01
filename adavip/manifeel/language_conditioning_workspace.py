@@ -20,6 +20,7 @@ from adavip.manifeel.full_sensor_workspace import (
 )
 from adavip.manifeel.language_conditioning_dataset import initialize_worker
 from adavip.manifeel.language_conditioning_diagnostics import measure_probes, select_probe_indices
+from adavip.manifeel.full_sensor_schema import CONDITION_NAMES
 from diffusion_policy.common.pytorch_util import dict_apply, optimizer_to
 
 
@@ -137,6 +138,16 @@ class LanguageConditioningWorkspace(FullSensorWorkspace):
         self._log_progress({"event": "safe_stop", "global_step": self.global_step,
                             "epoch": self.epoch, "batch_in_epoch": self.batch_in_epoch})
 
+    def _validate_input_protocol(self) -> None:
+        if float(self.cfg.policy.full_input_probability) != 1:
+            raise ValueError("Sensor and language dropout must remain disabled")
+
+    def _source_fingerprint(self) -> str:
+        return source_fingerprint()
+
+    def _sample_training_conditions(self, batch_size: int, device: torch.device) -> torch.Tensor:
+        return torch.zeros(batch_size, dtype=torch.long, device=device)
+
     def run(self) -> None:
         """Start formal optimization immediately, then preload and use all decoded RAM."""
         cfg, device = self.cfg, self._device()
@@ -151,12 +162,11 @@ class LanguageConditioningWorkspace(FullSensorWorkspace):
             raise ValueError("Unexpected all-demonstration episode count")
         if any(len(episodes) for episodes in dataset.val_episodes):
             raise ValueError("Validation episodes are forbidden in this comparison")
-        if float(cfg.policy.full_input_probability) != 1:
-            raise ValueError("Sensor and language dropout must remain disabled")
+        self._validate_input_protocol()
         normalizer = dataset.get_normalizer()
         expected = {"manifest": manifest_fingerprint(dataset.manifest),
                     "normalizer": normalizer_fingerprint(normalizer),
-                    "protocol": manifest_fingerprint(training_protocol(cfg)), "source": source_fingerprint()}
+                    "protocol": manifest_fingerprint(training_protocol(cfg)), "source": self._source_fingerprint()}
         for policy in (self.model, self.ema_model):
             if policy is not None:
                 policy.set_normalizer(normalizer)
@@ -226,7 +236,7 @@ class LanguageConditioningWorkspace(FullSensorWorkspace):
                 for group in self.optimizer.param_groups:
                     group["lr"] = cfg.optimizer.lr * self._lr_multiplier(total_steps)
                 self.optimizer.zero_grad(set_to_none=True)
-                condition_ids = torch.zeros(len(batch["action"]), dtype=torch.long, device=device)
+                condition_ids = self._sample_training_conditions(len(batch["action"]), device)
                 sample = self.model.prepare_denoising_sample(batch, generator=self._noise_generator)
                 losses = self.model.compute_loss_per_sample(batch, condition_ids, sample)
                 if not torch.isfinite(losses).all():
@@ -257,6 +267,8 @@ class LanguageConditioningWorkspace(FullSensorWorkspace):
                               "per_task_action_loss": [float(s / n) if n else None
                                                        for s, n in zip(state["task_sums"], state["task_counts"])],
                               "cumulative_task_counts": self.cumulative_task_counts}
+                    record.update(condition_names=list(CONDITION_NAMES),
+                                  condition_counts=state["condition_counts"].long().tolist())
                     if device.type == "cuda":
                         record.update(peak_allocated_gib=torch.cuda.max_memory_allocated(device) / 1024**3,
                                       peak_reserved_gib=torch.cuda.max_memory_reserved(device) / 1024**3)
@@ -293,6 +305,10 @@ class LanguageConditioningWorkspace(FullSensorWorkspace):
                        "runtime/diagnostic_seconds": diagnostic["seconds"],
                        "runtime/epoch_wall_seconds": time.perf_counter() - epoch_started,
                        "cumulative_task_counts": self.cumulative_task_counts}
+            metrics.update({"train/condition_names": list(CONDITION_NAMES),
+                            "train/condition_counts": state["condition_counts"].long().tolist(),
+                            "train/per_condition_action_loss": [float(s / n) if n else None for s, n in
+                                                                zip(state["condition_sums"], state["condition_counts"])]})
             self.epoch, self.batch_in_epoch, self.epoch_metrics_state = epoch_index + 1, 0, {}
             self._save_latest()
             if self.epoch in cfg.training.checkpoint_epochs:

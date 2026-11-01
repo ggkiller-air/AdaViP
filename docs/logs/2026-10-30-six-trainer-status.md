@@ -39,3 +39,22 @@
   `epoch100.ckpt`, `epoch200.ckpt`, and `latest.ckpt` at inspection.
   Latest checkpoint contents were not deserialized; `latest.ckpt` continues
   to be replaced by training.
+
+## L1/L2/S1 read-only status at 18:40 CST
+
+- Same jobs399733/399747/399040 remain RUNNING. Current epoch/step:
+  L1 342/380140, L2 232/257740, S1 170/346420(stage C). Subsequent steps
+  380220/257780/346440 independently confirm continued progress.
+- Last complete epoch action loss/speed: L1 epoch341 .0046610/270.17,
+  L2 epoch231 .0070743/245.13, S1 epoch169 .0085304/86.83 samples/s.
+  S1 utility loss .0588061; current partial epoch speed97.03.
+  L2 last three full-epoch speeds198.93/245.79/245.13, recovering from
+  the earlier approximately104--131 range; recent61.79s window207.14.
+  Recovery occurred without a runtime change by this agent.
+- Latest.ckpt exists for all; highest fixed snapshots L1 epoch300,
+  L2 epoch200, S1 epoch100. Recent sampled losses and gradients finite.
+  LC stderr empty; S1 has only known worker-affinity warning, no error markers.
+- GPU checks in each allocation: H200/143771MiB; L1/L2 use29881MiB,
+  S1 30163MiB, all approximately21%. Momentary utilization81/66/0 percent;
+  S1 zero snapshot is not a stall because its step count advances. No job,
+  checkpoint or training setting was modified.

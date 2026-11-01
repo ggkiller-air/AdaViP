@@ -1,0 +1,8 @@
+checkpoint: /data/wangzihao/outputs/manifeel/language_conditioning_t2_batch64_ep500_seed42_20261028_204459/l1/checkpoints/epoch500.ckpt
+output_dir: /data/wangzihao/outputs/manifeel/l1_epoch500_input_mask_sensitivity
+weights: ema
+expected_samples: 71265
+batch_size: 32
+num_workers: 8
+repeats: 4
+seed: 2042
