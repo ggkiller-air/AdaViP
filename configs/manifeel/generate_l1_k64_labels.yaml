@@ -1,0 +1,16 @@
+checkpoint: /data/wangzihao/outputs/manifeel/language_conditioning_t2_batch64_ep500_seed42_20261028_204459/l1/checkpoints/epoch500.ckpt
+weights: ema
+expected_epoch: 500
+expected_step: 557000
+reference_archive: /public/home/wangzihao/projects/AdaViP/outputs/stage1_utility_labels_ep500_k64
+previous_diagnostic: /data/wangzihao/outputs/manifeel/l1_dropout10_and_mask_batch32_ep100_seed42_20261031_170151/l1_epoch500_mask
+output_dir: /data/wangzihao/outputs/manifeel/l1_epoch500_utility_labels_k64
+expected_samples: 71265
+expected_windows: 65265
+window_batch_size: 32
+denoise_batch_size: 256
+num_workers: 8
+shard_size: 256
+runtime_profile: strict
+preflight_windows: 4
+stop_after_shards: 0
