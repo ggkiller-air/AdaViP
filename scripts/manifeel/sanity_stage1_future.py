@@ -26,6 +26,11 @@ from scripts.manifeel.language_runtime import configure_profile
 
 def main() -> None:
     """Check configured real batches, ResNets, target EMA and checkpoint IO."""
+    # Already queued batch scripts retain their original preflight invocation.
+    # Honor direct training without canceling and resubmitting their jobs.
+    if os.environ.get("S1F_PHASE") == "train":
+        print(json.dumps({"event": "preflight_skipped", "reason": "user_requested_direct_training"}), flush=True)
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--steps", type=int, default=4)

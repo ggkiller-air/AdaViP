@@ -98,8 +98,6 @@ def main() -> None:
 
     for signum in (signal.SIGUSR1, signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, request_stop)
-    if not cfg.resume:
-        preflight(workspace)
     workspace.run()
 
 

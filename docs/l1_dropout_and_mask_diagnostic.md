@@ -15,6 +15,8 @@ training entry points now enforce these restored settings. The October31
 batch32/E100 artifacts and their frozen source remain the historical experiment
 described above. `submit_l1_restored.py` compares all five new launch configs
 against the actual original L1 config before submitting any job.
+The user's subsequent direct-training instruction disables automatic GPU and
+IPC preflight for these restored runs; training starts in the workspace directly.
 
 Input sampling is90% full and10% uniformly divided among seven individual
 removals (V1,V2,V3,T1,T2,P,L) and two group removals (vision,tactile). Thus10%

@@ -55,3 +55,25 @@
   Before GPU work, both allocation-local and independent SSH nvidia-smi reads
   show NVIDIAH200143771MiB,0MiBused/0%utilization and no compute process on
   the allocated device. Existing CPU interactive404454 remains unchanged.
+
+## User requested direct training without preflight
+
+- Explicit user instruction supersedes automatic preflight for these five runs.
+  Removed automatic Future preflight from new batch scripts and dropout's
+  automatic preflight call; the shared step wrapper skips IPC tests in Future
+  and dropout training contexts. Already queued Future batch scripts retain
+  their submitted shell body, so the sanity entry point returns immediately
+  when S1F_PHASE=train. Standalone diagnostic helpers remain manually callable.
+- Preserved all five job IDs and queue positions. At19:24CST B412402 already
+  completed its earlier preflight and is in formal epoch2/global_step1120;
+  leave its trainer and optimizer state running. C/D/E/dropout remain queued
+  and will enter formal training directly. No training config changed.
+- Preserved the full previous697-file source snapshot and inventory as
+  `source_before_direct_training/` and `source_before_direct_training_sha256.json`.
+  Atomically replaced only four orchestration files in the runtime source,
+  restored read-only permissions, and updated source_sha256.json.
+  `direct_training_update.json` records exact before/after hashes. Model,
+  dataset and Future continuation fingerprints are unchanged; dropout has
+  not started and will use the updated runner fingerprint from initialization.
+- Python AST parsing, shell syntax and whitespace checks pass. No new GPU
+  preflight or full test suite was run for this orchestration-only change.

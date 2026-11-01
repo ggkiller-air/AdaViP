@@ -54,12 +54,6 @@ else
     arguments=(scripts/manifeel/train_stage1_future.py --config "${S1F_CONFIG}")
     if [[ -f "${S1F_OUTPUT}/checkpoints/latest.ckpt" ]]; then
         arguments+=("resume=${S1F_OUTPUT}/checkpoints/latest.ckpt")
-    else
-        # A separate process discards preflight updates before seed42 formal initialization.
-        srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" --cpu-bind=cores --unbuffered \
-            bash scripts/manifeel/run_language_step.sh "${MANIFEEL_PYTHON}" -u \
-            scripts/manifeel/sanity_stage1_future.py --config "${S1F_CONFIG}" \
-            --output "${S1F_OUTPUT}/preflight_${SLURM_JOB_ID}" --experiments "${S1F_EXPERIMENT}"
     fi
 fi
 srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" --cpu-bind=cores --unbuffered \
