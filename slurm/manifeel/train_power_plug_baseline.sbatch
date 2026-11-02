@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="/public/home/wangzihao/projects/AdaViP"
+REPO_ROOT="/public/home/wangzihao/projects/AdaViP-main"
 METHOD="${1:?Choose vision, tacrgb, or tacff}"
 cd "${REPO_ROOT}"
 mkdir -p /data/wangzihao/outputs/manifeel/slurm

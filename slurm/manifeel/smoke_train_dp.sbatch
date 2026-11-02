@@ -8,7 +8,7 @@
 #SBATCH --error=/data/wangzihao/outputs/manifeel/slurm/%x_%j.err
 
 set -euo pipefail
-REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP}"
+REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP-main}"
 mkdir -p /data/wangzihao/outputs/manifeel/slurm
 cd "${REPO_ROOT}"
 export MANIFEEL_NUM_DEMOS="${MANIFEEL_NUM_DEMOS:-1}"

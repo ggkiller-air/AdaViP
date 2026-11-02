@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP}"
+REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP-main}"
 FRAMES="${MANIFEEL_CAMERA_PREFLIGHT_FRAMES:-100}"
 TIMEOUT_SECONDS="${MANIFEEL_CAMERA_PREFLIGHT_TIMEOUT:-180}"
 

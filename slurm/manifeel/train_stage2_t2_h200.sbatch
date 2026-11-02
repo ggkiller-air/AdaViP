@@ -59,7 +59,7 @@ nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,no
 
 arguments=(
     --teacher /data/wangzihao/outputs/manifeel/checkpoint_archive/full_sensor_20261019_epochs300_400_500/package/checkpoints/epoch500.ckpt
-    --labels /public/home/wangzihao/projects/AdaViP/outputs/stage1_utility_labels_ep500_k64
+    --labels /public/home/wangzihao/project-archive/2026-11-02/legacy/AdaViP/outputs/stage1_utility_labels_ep500_k64
     --cache /data/wangzihao/cache/manifeel/full_sensor_float32_9task_v1_seed42_20261017
     --cache-config /data/wangzihao/outputs/manifeel/full_sensor_cache_build_20261017_134757/dataset_config.yaml
     --output "${STAGE2_OUTPUT}"

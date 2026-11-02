@@ -1,9 +1,13 @@
-# AdaViP ManiFeel Simulation
+# AdaViP
 
 Stage2 Transformer / MLP 共用 `main` 和同一评测入口，支持自动识别 ckpt、批量评测：
 见 [4090 评测说明](docs/stage2_evaluation.md)。
 
-本仓库只保留 AdaViP 在 ManiFeel Isaac Gym/TacSL 中的仿真训练与评估流程。
+本仓库维护 AdaViP 在 ManiFeel 和 OpenViTac 上的训练与评估适配。
+OpenViTac 的数据、模型与阶段训练入口见
+[OpenViTac 接入说明](docs/openvitac_integration.md)。三个独立仓库的职责和本机
+归档位置见[工作区说明](docs/workspace_layout.md)。
+
 真机策略、数据处理和部署代码由独立仓库维护；运行这里的实验不需要 ROS、
 相机、机器人 SDK 或真机数据。
 

@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP}"
+REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP-main}"
 OUTPUT_ROOT="${MANIFEEL_OUTPUT_ROOT:-/data/wangzihao/outputs/manifeel}"
 CHECKPOINT="${MANIFEEL_CHECKPOINT:-${OUTPUT_ROOT}/dp_usb_vision_wrist_full_20260808/checkpoints/latest_epoch280.ckpt}"
 OUTPUT_DIR="${MANIFEEL_EVAL_OUTPUT:-${OUTPUT_ROOT}/dp_usb_vision_wrist_full_20260808/eval_epoch280_n10_steps500_job${SLURM_JOB_ID}}"

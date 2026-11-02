@@ -9,7 +9,7 @@
 #SBATCH --error=/data/wangzihao/outputs/manifeel/slurm/%x_%j.err
 
 set -euo pipefail
-cd /public/home/wangzihao/projects/AdaViP
+cd /public/home/wangzihao/projects/AdaViP-main
 source scripts/manifeel/common.sh
 activate_manifeel
 export OMP_NUM_THREADS=4

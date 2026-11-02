@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-cd /public/home/wangzihao/projects/AdaViP
+cd /public/home/wangzihao/projects/AdaViP-main
 mkdir -p /data/wangzihao/outputs/manifeel/slurm
 
 export MANIFEEL_RUN_NAME="${MANIFEEL_RUN_NAME:-table1_dp_b416_w12_ep300_seed42}"

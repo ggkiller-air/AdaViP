@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="/public/home/wangzihao/projects/AdaViP"
+REPO_ROOT="/public/home/wangzihao/projects/AdaViP-main"
 cd "${REPO_ROOT}"
 mkdir -p /data/wangzihao/outputs/manifeel/slurm
 exec /public/home/wangzihao/.local/miniforge3/envs/manifeel/bin/python \

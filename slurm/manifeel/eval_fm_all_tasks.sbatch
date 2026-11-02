@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP}"
+REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP-main}"
 CHECKPOINT="${MANIFEEL_CHECKPOINT:?Set MANIFEEL_CHECKPOINT to an FM checkpoint}"
 OUTPUT_ROOT="${MANIFEEL_OUTPUT_ROOT:-/data/wangzihao/outputs/manifeel}"
 CHECKPOINT_NAME="${CHECKPOINT##*/}"

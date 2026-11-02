@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="/public/home/wangzihao/projects/AdaViP"
+REPO_ROOT="/public/home/wangzihao/projects/AdaViP-main"
 RUN_NAME="dp_power_plug_vision_paper_ep400_seed42"
 OUTPUT_ROOT="/data/wangzihao/outputs/manifeel"
 OUTPUT_DIR="${OUTPUT_ROOT}/${RUN_NAME}"

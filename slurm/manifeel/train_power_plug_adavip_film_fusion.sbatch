@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="/public/home/wangzihao/projects/AdaViP"
+REPO_ROOT="/public/home/wangzihao/projects/AdaViP-main"
 cd "${REPO_ROOT}"
 mkdir -p /data/wangzihao/outputs/manifeel/slurm
 exec bash scripts/manifeel/train_power_plug_adavip_film_fusion.sh "$@"

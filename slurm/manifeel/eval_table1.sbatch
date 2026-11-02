@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP}"
+REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP-main}"
 RUN_NAME="${MANIFEEL_RUN_NAME:?Set MANIFEEL_RUN_NAME to the Table 1 run name}"
 CHECKPOINT="${MANIFEEL_CHECKPOINT:-/data/wangzihao/outputs/manifeel/${RUN_NAME}/checkpoints/best_val.ckpt}"
 CHECKPOINT_TAG="${MANIFEEL_CHECKPOINT_TAG:-$(basename "${CHECKPOINT}" .ckpt)}"

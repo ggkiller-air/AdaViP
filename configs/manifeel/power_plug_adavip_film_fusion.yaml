@@ -17,10 +17,10 @@ tactile_frame_delta: 5
 # The frozen backbones are external assets. Override these four variables on
 # another host instead of editing this config (see the ModelScope downloader).
 film_fusion_assets:
-  clip_checkpoint: ${oc.env:ADAVIP_FILM_FUSION_CLIP_CHECKPOINT,/public/home/wangzihao/projects/Piper_adavip/checkpoints/pretrained/clip/RN50.pt}
-  clip_source_root: ${oc.env:ADAVIP_FILM_FUSION_CLIP_SOURCE_ROOT,/public/home/wangzihao/projects/Piper_adavip/third_party/CLIP}
-  sparsh_checkpoint: ${oc.env:ADAVIP_FILM_FUSION_SPARSH_CHECKPOINT,/public/home/wangzihao/projects/Piper_adavip/checkpoints/pretrained/sparsh/dino_vitbase.ckpt}
-  sparsh_source_root: ${oc.env:ADAVIP_FILM_FUSION_SPARSH_SOURCE_ROOT,/public/home/wangzihao/projects/Piper_adavip/third_party/sparsh}
+  clip_checkpoint: ${oc.env:ADAVIP_FILM_FUSION_CLIP_CHECKPOINT,/public/home/wangzihao/project-archive/2026-11-02/legacy/Piper_adavip/checkpoints/pretrained/clip/RN50.pt}
+  clip_source_root: ${oc.env:ADAVIP_FILM_FUSION_CLIP_SOURCE_ROOT,/public/home/wangzihao/project-archive/2026-11-02/legacy/Piper_adavip/third_party/CLIP}
+  sparsh_checkpoint: ${oc.env:ADAVIP_FILM_FUSION_SPARSH_CHECKPOINT,/public/home/wangzihao/project-archive/2026-11-02/legacy/Piper_adavip/checkpoints/pretrained/sparsh/dino_vitbase.ckpt}
+  sparsh_source_root: ${oc.env:ADAVIP_FILM_FUSION_SPARSH_SOURCE_ROOT,/public/home/wangzihao/project-archive/2026-11-02/legacy/Piper_adavip/third_party/sparsh}
 
 shape_meta: &shape_meta
   obs:

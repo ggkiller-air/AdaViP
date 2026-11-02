@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-cd /public/home/wangzihao/projects/AdaViP
+cd /public/home/wangzihao/projects/AdaViP-main
 mkdir -p /data/wangzihao/outputs/manifeel/slurm
 
 export MANIFEEL_RUN_NAME="${MANIFEEL_RUN_NAME:-dp_multitask_front_wrist_smoke_${SLURM_JOB_ID}}"

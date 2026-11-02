@@ -10,7 +10,7 @@
 set -euo pipefail
 
 TASK_ID="${1:?Usage: sbatch train_hyper_resnet_task.sbatch TASK_ID}"
-REPO_ROOT="/public/home/wangzihao/projects/AdaViP"
+REPO_ROOT="/public/home/wangzihao/projects/AdaViP-main"
 cd "${REPO_ROOT}"
 mkdir -p /data/wangzihao/outputs/manifeel/slurm
 exec /public/home/wangzihao/.local/miniforge3/envs/manifeel/bin/python \

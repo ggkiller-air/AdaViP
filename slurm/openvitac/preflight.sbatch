@@ -9,7 +9,7 @@
 #SBATCH --output=/data/wangzihao/outputs/openvitac/slurm/%x_%j.out
 #SBATCH --error=/data/wangzihao/outputs/openvitac/slurm/%x_%j.err
 set -euo pipefail
-cd "${OPENVITAC_SOURCE_ROOT:-/public/home/wangzihao/projects/AdaViP-openvitac}"
+cd "${OPENVITAC_SOURCE_ROOT:-/public/home/wangzihao/projects/AdaViP-main}"
 source scripts/openvitac/common.sh
 export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4

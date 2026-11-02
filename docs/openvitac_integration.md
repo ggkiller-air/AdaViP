@@ -1,8 +1,11 @@
 # OpenViTac data and UViP integration
 
-This benchmark lives in an independent worktree/branch, with all new Python code
-under adavip/openvitac. ManiFeel and UniVTAC modules, data, normalizers, labels,
-checkpoints and running jobs are not modified.
+This benchmark is maintained on main, with its Python code under
+adavip/openvitac and its entrypoints under scripts/openvitac. The original
+benchmark worktree is archived; use AdaViP-main for further development.
+ManiFeel and UniVTAC data, normalizers, labels, checkpoints and running jobs
+remain separate. The official benchmark and ACT baseline live in the independent
+[OpenViTac fork](https://github.com/ggkiller-air/OpenViTac).
 
 ## Source and action contract
 

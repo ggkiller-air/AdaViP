@@ -240,7 +240,7 @@ def main() -> None:
     parser.add_argument("--check-inputs", action="store_true",
                         help="Validate real subset inputs on CPU without a GPU performance claim")
     parser.add_argument("--teacher", default="/data/wangzihao/outputs/manifeel/checkpoint_archive/full_sensor_20261019_epochs300_400_500/package/checkpoints/epoch500.ckpt")
-    parser.add_argument("--labels", default="/public/home/wangzihao/projects/AdaViP/outputs/stage1_utility_labels_ep500_k64")
+    parser.add_argument("--labels", default="/public/home/wangzihao/project-archive/2026-11-02/legacy/AdaViP/outputs/stage1_utility_labels_ep500_k64")
     parser.add_argument("--cache", default="/data/wangzihao/cache/manifeel/full_sensor_float32_9task_v1_seed42_20261017")
     parser.add_argument("--cache-config", default="/data/wangzihao/outputs/manifeel/full_sensor_cache_build_20261017_134757/dataset_config.yaml")
     args = parser.parse_args()

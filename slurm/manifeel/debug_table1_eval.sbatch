@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP}"
+REPO_ROOT="${REPO_ROOT:-/public/home/wangzihao/projects/AdaViP-main}"
 RUN_NAME="${MANIFEEL_RUN_NAME:-table1_vistac_dp_b416_w12_ep300_seed42}"
 TASK_ID="${MANIFEEL_EVAL_TASK_ID:-peg_insertion}"
 CHECKPOINT="${MANIFEEL_CHECKPOINT:-/data/wangzihao/outputs/manifeel/${RUN_NAME}/checkpoints/best_val.ckpt}"
