@@ -9,12 +9,55 @@ from torch import Tensor
 from adavip.manifeel.utility_label_store import window_draws
 
 
+def validate_teacher_protocol(cfg: object, model_cfg: object, metadata: dict,
+                              checkpoint: object, normalizer: str) -> None:
+    """Require an explicit teacher identity and the same frozen comparison normalizer."""
+    from pathlib import Path
+    import json
+
+    if (metadata['epoch'] != cfg.expected_epoch or metadata['global_step'] != cfg.expected_step
+            or metadata['weights'] != 'ema' or model_cfg.variant != 'l1'):
+        raise ValueError('L1 EMA checkpoint epoch/step/variant differs from the requested teacher')
+    protocol = cfg.get('teacher_protocol', 'original')
+    if protocol == 'original':
+        previous = json.loads((Path(cfg.previous_diagnostic)/'protocol.json').read_text())
+        if previous['checkpoint'] != str(checkpoint) or previous['normalizer'] != normalizer:
+            raise ValueError('Checkpoint/normalizer differs from the original L1 diagnostic')
+    elif protocol in ('dropout10', 'original_snapshot'):
+        from omegaconf import OmegaConf
+
+        if protocol == 'dropout10' and (model_cfg.get('_target_') != 'adavip.manifeel.l1_dropout.L1DropoutWorkspace'
+                or model_cfg.policy.obs_encoder._target_ != 'adavip.manifeel.l1_dropout.L1DropoutObsEncoder'
+                or model_cfg.policy.full_input_probability != 0.9
+                or list(model_cfg.policy.mask_weights) != [1] * 9):
+            raise ValueError('Expected the L1 input-dropout10 teacher with nine uniform removals')
+        if protocol == 'dropout10':
+            from scripts.manifeel.l1_training_protocol import validate_l1_training_protocol
+            validate_l1_training_protocol(model_cfg, Path(cfg.baseline_training_config))
+        else:
+            baseline = OmegaConf.to_container(OmegaConf.load(cfg.baseline_training_config), resolve=True)
+            actual = OmegaConf.to_container(model_cfg, resolve=True)
+            for key in baseline:
+                if key not in ('name', 'output_dir', 'resume') and actual.get(key) != baseline[key]:
+                    raise ValueError(f'Original L1 snapshot training protocol differs: {key}')
+        comparison = Path(cfg.normalizer_reference_archive)
+        manifest = json.loads((comparison/'manifest.json').read_text())
+        complete = json.loads((comparison/'COMPLETE.json').read_text())
+        if (complete['status'] != 'complete' or complete['contract_sha256'] != manifest['sha256']
+                or manifest['teacher']['normalizer_sha256'] != normalizer):
+            raise ValueError('Comparison archive is incomplete or has a different normalizer')
+        if Path(checkpoint).name != f'epoch{cfg.expected_epoch}.ckpt':
+            raise ValueError('Utility labels require a fixed epoch snapshot')
+    else:
+        raise ValueError(f'Unknown L1 teacher protocol: {protocol}')
+
+
 @torch.inference_mode()
 def mask_conditionings(policy: object, observations: dict) -> Tensor:
-    """Use yesterday's L1 zero-token/flag/late-language intervention without new parameters."""
+    """Apply the shared L1 zero-token/flag/late-language intervention without random dropout."""
     encoder = policy.obs_encoder
     if encoder.variant != 'l1':
-        raise ValueError('Only the original L1 late-language encoder is supported')
+        raise ValueError('Only the L1 late-language encoder is supported')
     normalized = policy.normalizer.normalize(observations)
     tokens = encoder.encode_sensor_tokens(normalized)
     language = encoder.language_embedding(normalized)

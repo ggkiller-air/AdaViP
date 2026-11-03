@@ -1,0 +1,31 @@
+name: tabero_l1_field_fs_no_dropout
+architecture: tabero_field_l1_v1
+cache_dir: /data/wangzihao/datasets/tabero/cache/field_fs_rgb_u8_v1
+seed: 42
+batch_size: 64
+num_epochs: 200
+num_workers: 8
+preload_ram: true
+horizon: 16
+n_obs_steps: 2
+n_action_steps: 8
+token_dim: 256
+down_dims: [512, 1024, 2048]
+diffusion_step_embed_dim: 128
+num_diffusion_steps: 100
+num_inference_steps: 100
+full_input_probability: 1.0
+force_loss_weight: 0.1
+learning_rate: 0.0001
+betas: [0.95, 0.999]
+weight_decay: 0.000001
+warmup_steps: 1000
+gradient_clip_norm: 1.0
+precision: fp32
+checkpoint_every_epochs: 25
+checkpoint_every_steps: 1000
+checkpoint_first_step: 1
+preflight_steps: 100
+preflight_window: 20
+min_samples_per_second: 40
+max_data_wait_fraction: 0.4

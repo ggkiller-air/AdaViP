@@ -1,4 +1,4 @@
-"""Generate the full L1 E500 EMA K64 signed label store without training."""
+"""Generate full original or input-dropout L1 EMA K64 utility labels without training."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from adavip.manifeel.full_sensor_schema import CONDITION_NAMES
 from adavip.manifeel.full_sensor_workspace import manifest_fingerprint, normalizer_fingerprint
 from adavip.manifeel.l1_utility_labels import (
     ReferenceK64Draws, mask_conditionings, paired_k64_losses, reference_paired_losses, score_conditionings,
+    validate_teacher_protocol,
 )
 from adavip.manifeel.stage1_future_dataset import initialize_future_worker
 from adavip.manifeel.utility_label_pilot import aggregate_losses
@@ -100,15 +101,11 @@ def main() -> None:
     torch.use_deterministic_algorithms(True)
     checkpoint = Path(cfg.checkpoint).resolve()
     policy, model_cfg, metadata = load_evaluation_policy(checkpoint, 'cuda:0', cfg.weights)
-    if (metadata['epoch'] != cfg.expected_epoch or metadata['global_step'] != cfg.expected_step
-            or metadata['weights'] != 'ema' or model_cfg.variant != 'l1'
-            or policy.horizon != 16 or policy.n_obs_steps != 2
+    if (policy.horizon != 16 or policy.n_obs_steps != 2
             or policy.noise_scheduler.config.num_train_timesteps != 100):
-        raise ValueError('Expected the original L1 E500 EMA, not a dropout/Future checkpoint')
+        raise ValueError('Expected L1 history2/horizon16 with 100 diffusion timesteps')
     normalizer = normalizer_fingerprint(policy.normalizer)
-    previous = json.loads((Path(cfg.previous_diagnostic)/'protocol.json').read_text())
-    if previous['checkpoint'] != str(checkpoint) or previous['normalizer'] != normalizer:
-        raise ValueError("Checkpoint/normalizer differs from yesterday's L1 diagnostic")
+    validate_teacher_protocol(cfg, model_cfg, metadata, checkpoint, normalizer)
     dataset_cfg = OmegaConf.create(OmegaConf.to_container(model_cfg.dataset, resolve=True))
     dataset_cfg._target_ = 'adavip.manifeel.language_conditioning_dataset.LanguageConditioningDataset'
     dataset = hydra.utils.instantiate(dataset_cfg)
@@ -128,6 +125,8 @@ def main() -> None:
                'adavip/manifeel/utility_label_pilot.py', 'adavip/manifeel/utility_k64_precision.py',
                'adavip/manifeel/utility_label_store.py', 'adavip/manifeel/task_protocol.py',
                'adavip/manifeel/task_embeddings.py', 'scripts/manifeel/generate_l1_k64_labels.py')
+    if cfg.get('teacher_protocol', 'original') == 'dropout10':
+        sources += ('adavip/manifeel/l1_dropout.py', 'scripts/manifeel/l1_training_protocol.py')
     root = Path(__file__).resolve().parents[2]
     contract = {'schema': 'adavip.utility_labels.v1', 'windows': len(index),
                 'chunk_size': int(cfg.shard_size), 'dimensions': list(CONDITION_NAMES[1:]),
@@ -149,6 +148,9 @@ def main() -> None:
                 'validity': 'complete history2/action horizon16; absent action dimension7 masked',
                 'label_normalization': 'none; raw signed utility; no clipping or fitting',
                 'scope': 'full label generation only; no model/optimizer/Stage2 training'}
+    if cfg.get('teacher_protocol', 'original') != 'original':
+        contract['teacher_protocol'] = cfg.teacher_protocol
+        contract['normalizer_reference_archive'] = str(Path(cfg.normalizer_reference_archive).resolve())
     contract['sha256'] = manifest_fingerprint(contract)
     if (output/'manifest.json').exists():
         if json.loads((output/'manifest.json').read_text()) != contract:

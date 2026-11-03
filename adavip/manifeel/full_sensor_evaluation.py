@@ -58,6 +58,10 @@ def load_evaluation_policy(
         cfg.policy._target_ = (
             "adavip.manifeel.stage2_mlp_policy.Stage2MlpPolicy" if variant == "stage2_mlp_fusion"
             else "adavip.manifeel.stage2_policy.Stage2Policy")
+        if payload["contract"].get("encoder_variant") == "l1":
+            if variant != "stage2_transformer":
+                raise ValueError("L1 Student requires the S0 Transformer head")
+            cfg.policy._target_ = "adavip.manifeel.stage2_l1_policy.Stage2L1Policy"
         strategy = payload["contract"].get("encoder_strategy", "s0")
         if variant == "stage2_transformer" and strategy != "s0":
             if cfg.policy.get("encoder_strategy", strategy) != strategy:

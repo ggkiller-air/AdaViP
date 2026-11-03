@@ -77,16 +77,28 @@ def test_reference_draws_reuse_pilot_and_ignore_batch_boundaries(tmp_path: Path)
         draws.get(np.array([-1]))
 
 
-def test_l1_masks_preserve_native_full_path_and_remove_input_influence(tmp_path: Path, data_args):
+@pytest.mark.parametrize('dropout', [False, True])
+def test_l1_masks_preserve_native_full_path_and_remove_input_influence(tmp_path: Path, data_args, dropout):
     from test_language_conditioning import small_config
     from adavip.manifeel.language_conditioning_dataset import LanguageConditioningDataset
     from adavip.manifeel.language_conditioning_workspace import LanguageConditioningWorkspace
     dataset = LanguageConditioningDataset(**data_args)
-    workspace = LanguageConditioningWorkspace(small_config(data_args, tmp_path/'mask'))
+    if dropout:
+        from test_l1_dropout import dropout_config
+        from adavip.manifeel.l1_dropout import L1DropoutWorkspace
+        workspace = L1DropoutWorkspace(dropout_config(data_args, tmp_path/'mask'))
+    else:
+        workspace = LanguageConditioningWorkspace(small_config(data_args, tmp_path/'mask'))
     policy = workspace.model.eval()
     policy.set_normalizer(dataset.get_normalizer())
     observations = torch.utils.data.default_collate([dataset[3], dataset[36]])['obs']
     original = mask_conditionings(policy, observations)
+    if dropout:
+        with torch.inference_mode():
+            normalized = policy.normalizer.normalize(observations)
+            for condition, presence in enumerate(policy.condition_presence):
+                expected = policy.obs_encoder(normalized, presence.expand(2, -1))
+                torch.testing.assert_close(original[condition], expected, rtol=0, atol=0)
     changed = {k: v.clone() for k, v in observations.items()}
     for key in ('front', 'side', 'wrist'):
         changed[key].zero_()
@@ -135,3 +147,64 @@ def test_final_store_matches_existing_reader_and_preserves_every_signed_label(tm
     assert (reader.utility < 0).any()
     assert (reader.variance >= 0).all()
     np.testing.assert_array_equal(reader.index, index)
+
+
+@pytest.mark.parametrize('protocol', ['original_snapshot', 'dropout10'])
+def test_snapshot_teacher_identity_and_normalizer_are_required(tmp_path: Path, data_args, protocol):
+    from omegaconf import OmegaConf
+    from test_language_conditioning import small_config
+    from test_l1_dropout import dropout_config
+    from adavip.manifeel.l1_utility_labels import validate_teacher_protocol
+
+    baseline = small_config(data_args, tmp_path/'baseline')
+    baseline_path = tmp_path/'training.yaml'
+    OmegaConf.save(baseline, baseline_path)
+    model = dropout_config(data_args, tmp_path/'teacher') if protocol == 'dropout10' else baseline
+    reference = tmp_path/'labels'
+    reference.mkdir()
+    (reference/'manifest.json').write_text(json.dumps({'sha256': 'abc', 'teacher': {'normalizer_sha256': 'norm'}}))
+    (reference/'COMPLETE.json').write_text(json.dumps({'status': 'complete', 'contract_sha256': 'abc'}))
+    cfg = OmegaConf.create({'teacher_protocol': protocol, 'expected_epoch': 50, 'expected_step': 55700,
+                           'baseline_training_config': str(baseline_path), 'normalizer_reference_archive': str(reference)})
+    metadata = {'epoch': 50, 'global_step': 55700, 'weights': 'ema'}
+    validate_teacher_protocol(cfg, model, metadata, tmp_path/'epoch50.ckpt', 'norm')
+    with pytest.raises(ValueError, match='epoch/step/variant'):
+        validate_teacher_protocol(cfg, model, {**metadata, 'epoch': 200}, tmp_path/'epoch50.ckpt', 'norm')
+    with pytest.raises(ValueError, match='normalizer'):
+        validate_teacher_protocol(cfg, model, metadata, tmp_path/'epoch50.ckpt', 'different')
+    with pytest.raises(ValueError, match='fixed epoch'):
+        validate_teacher_protocol(cfg, model, metadata, tmp_path/'latest.ckpt', 'norm')
+    model.policy.full_input_probability = 0.8
+    with pytest.raises(ValueError):
+        validate_teacher_protocol(cfg, model, metadata, tmp_path/'epoch50.ckpt', 'norm')
+
+
+def test_paired_comparison_preserves_negative_scores_and_constant_correlations():
+    from scripts.manifeel.compare_l1_utility_labels import summarize_pair
+    result = summarize_pair(np.array([-1., 1., 3.]), np.array([-2., 0., 1.]))
+    assert result['original_mean'] == 1.
+    assert result['dropout_negative_fraction'] == 1/3
+    assert result['sign_agreement'] == 2/3
+    np.testing.assert_allclose(result['delta_mean'], -4/3)
+    assert summarize_pair(np.ones(3), np.zeros(3))['pearson'] is None
+
+
+def test_paired_comparison_rejects_epoch_or_draw_mismatches():
+    import copy
+    from scripts.manifeel.compare_l1_utility_labels import validate_pair
+    common = {'dimensions': [], 'conditions': [], 'protocol': {}, 'draws': {'seed': 42},
+              'reference_manifest_sha256': 'abc', 'mask_semantics': 'zero', 'validity': 'full',
+              'label_normalization': 'none', 'teacher': {'normalizer_sha256': 'norm',
+              'metadata': {'epoch': 50, 'global_step': 55700, 'weights': 'ema'}}, 'runtime': {}}
+    original = SimpleNamespace(index=np.arange(3), task_ids=np.arange(3),
+                               manifest={**copy.deepcopy(common), 'teacher_protocol': 'original_snapshot'})
+    dropout = SimpleNamespace(index=np.arange(3), task_ids=np.arange(3),
+                              manifest={**copy.deepcopy(common), 'teacher_protocol': 'dropout10'})
+    validate_pair(original, dropout)
+    dropout.manifest['teacher']['metadata']['epoch'] = 500
+    with pytest.raises(ValueError, match='checkpoint differs: epoch'):
+        validate_pair(original, dropout)
+    dropout.manifest['teacher']['metadata']['epoch'] = 50
+    dropout.manifest['draws']['seed'] = 43
+    with pytest.raises(ValueError, match='protocol differs: draws'):
+        validate_pair(original, dropout)

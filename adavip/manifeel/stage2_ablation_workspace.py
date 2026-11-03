@@ -52,7 +52,11 @@ def parameter_report(policy: Stage2Policy, gradients: bool = False) -> dict:
     encoder = policy.action_encoder if policy.is_dual_encoder else policy.obs_encoder
     modules.update({f"action_resnet/{key}": module for key, module in encoder.image_encoders.items()})
     modules.update(action_temporal=encoder.temporal_projections,
-                   action_proprio=encoder.state_projection, action_language=encoder.language_projection)
+                   action_proprio=encoder.state_projection,
+                   action_language=(encoder.language_projection if hasattr(encoder, "language_projection")
+                                    else encoder.language_head))
+    if hasattr(policy, "language_token_projection"):
+        modules["action_language_token"] = policy.language_token_projection
     result = {}
     for name, module in modules.items():
         parameters = list(module.parameters())
@@ -105,7 +109,8 @@ def validate_gradient_routes(policy: Stage2Policy, batch: dict) -> dict:
                     raise RuntimeError(f"Incorrect {stage} ResNet gradient route: {key}")
             if policy.is_dual_encoder or stage == "C":
                 for module in (encoder.temporal_projections, encoder.state_projection,
-                               encoder.language_projection):
+                               (encoder.language_projection if hasattr(encoder, "language_projection")
+                                else encoder.language_head)):
                     if not any(p.grad is not None and bool(p.grad.count_nonzero()) for p in module.parameters()):
                         raise RuntimeError("Action tokenizer has no gradient")
                 if encoder.sensor_identity.grad is None or not bool(encoder.sensor_identity.grad.count_nonzero()):
