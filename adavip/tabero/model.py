@@ -67,7 +67,13 @@ def replace_batch_norm(module: nn.Module) -> None:
 
 
 class FieldEncoder(nn.Module):
-    """Two cameras + one bilateral marker-history stream + pose; language is late."""
+    """Two cameras, bilateral markers and pose; language is late.
+
+    Like the pinned native TCN, two causal three-tap blocks and last-frame
+    pooling use only the last five marker frames. The nine-frame input keeps
+    the native data layout; its reference and first three history frames have
+    no path to the output. Changing this requires a new Teacher/label protocol.
+    """
 
     def __init__(self, history: int = 2, token_dim: int = 256, backbone: nn.Module | None = None,
                  image_feature_dim: int = 512) -> None:

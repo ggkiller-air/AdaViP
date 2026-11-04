@@ -90,6 +90,17 @@ def test_masked_modality_invariance():
                                    policy.obs_encoder.condition(changed, sample["obs"]["language"], missing), rtol=0, atol=0)
 
 
+def test_native_tcn_last_frame_receptive_field():
+    """Pin the existing checkpoint semantics: nine stored frames, five used."""
+    torch.manual_seed(42)
+    encoder = torch.nn.Sequential(CausalTCNBlock(3, 8), CausalTCNBlock(8, 8))
+    values = torch.randn(2, 9, 3, requires_grad=True)
+    encoder(values)[:, -1].sum().backward()
+    by_frame = values.grad.abs().sum((0, 2))
+    assert torch.equal(by_frame[:4], torch.zeros(4))
+    assert (by_frame[4:] > 0).all()
+
+
 def test_weighted_force_loss_and_full_input_gradients():
     policy, sample = tiny_policy(), batch()
     result = policy.loss_components(torch.ones(2, 16, 13), sample["action_loss_mask"])

@@ -42,6 +42,10 @@ manifeel.sif
 *.tar.gz.parts_*/
 docs/manifeel_logs/
 
+# Development records are source documentation, not generated runtime logs.
+!docs/logs/
+!docs/logs/*.md
+
 # Local credentials and environment overrides
 .env
 .env.*

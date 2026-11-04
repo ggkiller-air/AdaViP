@@ -1,0 +1,24 @@
+name: tabero_e150_ema_k64_uvip_s0_batch64_ep200
+teacher: /data/wangzihao/experiments/tabero/l1_field_fs_batch64_ep200_seed42_20261102_234707/train/checkpoints/epoch0150.ckpt
+cache_dir: /data/wangzihao/datasets/tabero/cache/field_fs_rgb_u8_v1
+cache_id: dbe3a8aff42de0d32ded00acd2a2f02982f9df9ef94282e5fc946a1df4c79ef6
+seed: 42
+label_seed: 20261104
+label_shard_size: 128
+label_window_batch: 8
+denoise_microbatch: 128
+preload_ram: true
+num_workers: 8
+batch_size: 64
+num_epochs: 200
+encoder_lr: 0.00008
+utility_lr: 0.0001
+action_lr: 0.0001
+utility_weight: 0.05
+betas: [0.95, 0.999]
+weight_decay: 0.000001
+warmup_steps: 500
+gradient_clip_norm: 1.0
+min_samples_per_second: 40
+checkpoint_every_steps: 1000
+checkpoint_epochs: [1, 6, 10, 20, 25, 50, 75, 100, 125, 150, 175, 200]

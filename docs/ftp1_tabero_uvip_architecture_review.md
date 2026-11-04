@@ -1,5 +1,12 @@
 # UniVTAC / Tabero UVIP 结构确认稿（2026-11-02）
 
+本文件保留 11 月 2 日的设计讨论。当前执行协议与审查结果以
+`logs/2026-11-03-native-uvip-integration.md` 和
+`logs/2026-11-04-three-benchmark-review.md` 为准：原生 FTP/VTLA 均仅新增
+utility/context/FiLM 并训练 action LoRA，C 阶段保持冻结范围、降低 LR；
+Tabero-VTLA 没有这里早期建议的额外 attention/query/action residual。
+当前 DP Teacher 为 ManiFeel E50、UniVTAC E300、Tabero E150 的 EMA。
+
 状态：用户已确认FTP保留utility→FiLM，删除新增query/attention/动作残差；
 Tabero已确认Field+FS输入方案。确认设计不代表Stage2已开训。
 UniVTAC DP L1已经按既定late-language/no-dropout定义实现，独立快照CPU验证通过。
