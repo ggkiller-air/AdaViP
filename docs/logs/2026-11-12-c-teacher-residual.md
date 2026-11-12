@@ -208,3 +208,51 @@
   486686/486687/486688 validate B64/B128/B256 with512GiB RAM. Formal launcher
   refuses missing same-batch/world smoke, resume or portable-inference passes.
   The three formal submissions and publication receipts will be recorded below.
+- V4 passed parameter routing and full fresh-process resume, but correctly failed
+  the portable raw inference assertion. Diagnostic486729 found equal parameters,
+  strides and module modes, but the reference retained trainable parameters while
+  the evaluation loader froze them. Matching `eval().requires_grad_(False)` made
+  residual conditioning and all100sampling steps bitwise identical; before that,
+  conditioning differed by5.96e-8 and actions by3.79e-4. Evidence:
+  `smoke_b64_v4/INFERENCE_DIAGNOSTIC.json`. No tolerance was relaxed. Final runtime
+  a6424aedd2f8ed2e163dd0e636c617fb3086df33 changes only this validation setup;
+  frozen source_v5 and its source.sha256 are retained and code is pushed.
+- Final overload smokes486749(B64/2GPU) and486750(B128/4GPU) completed0 in8m42s
+  and8m52s. Each passed13CPU checks, Teacher parity, A/B/C actual updates,
+  unequal tail and data-epoch transition, exact fresh-process raw/EMA/Adam/LR/
+  all-rank RNG/cursor/statistics continuation, and nine-task raw/EMA portable
+  full-sampling bitwise equality. Receipts: smoke_b64_v5/SMOKE_PASS.json and
+  smoke_b128_v5/SMOKE_PASS.json. B128 v2 additionally checked a whole real data
+  epoch; short smokes deliberately skip the middle after checking its sampler.
+- Formal B64 job486761 and B128 job486763 started2026-11-12 23:49CST onserver13,
+  assigned idle H200s1--2 and3--5,7 respectively; original B32 remains onGPU0.
+  Normal accountyangyc/qosuser_wangzihao,32CPUs,384/512GiB RAM,48h allocation,
+  signal-triggered checkpoint/requeue and explicit full-state resume. Both
+  produced first-update latest.ckpt and finite utility-only updates. Pure-CPU
+  overload publishers486762/486764 use distinct B64/B128 prefixes under
+  `ggkiller/UVIP/ManiFeel/ablation/C_teacher_residual_equal_updates/` and external
+  archives. B64 metadata uploads verified; B128 initially hit RateLimitError
+  and the existing bounded600second retry loop retained the pending work.
+- B128 full-pipeline warm smoke windows measured500--704samples/s (median633),
+  implying about23h to408000updates before checkpoint/queue overhead; the
+  compute-only19h estimate is not an end-to-end promise. Equal-update larger
+  batches test sample-rich optimization, not a matched-compute speed claim.
+- Final B256 overload smoke486751 completed0 in14m40s, with every same-batch
+  gate passing including the241-sample tail and bitwise portable raw/EMA full
+  sampling. NFS briefly delayed visibility of SMOKE_PASS.json; submission was
+  held until the actual receipt could be read and checked. Formal486770 was
+  submitted23:56CST with4H200/32CPU/512GiB and is pending MaxGRESPerAccount;
+  publisher486771 is running onoverload CPU. Keep this required-result long run
+  in the normal queue, without displacing original jobs480372 or484745.
+- Final runtime source manifest SHA256:
+  b380313d5037cff6fb1b0acfa1b0b3915a62cbdc58c62a972e3ec3f494ca49c1.
+  Root registry.json, per-group planned_config.json/registry.json, source_v5,
+  same-batch smoke receipts and publication READMEs provide the launch contract.
+  Training entry: scripts/manifeel/train_stage2_equal_updates.py; batch wrapper:
+  slurm/manifeel/train_stage2_equal_updates.sbatch. Outputs are
+  root/c_teacher_residual_b{64,128,256}_u1224000_seed42_20261112/C_teacher_residual.
+  Remote fixed checkpoints: ggkiller/UVIP,
+  ManiFeel/ablation/C_teacher_residual_equal_updates/B{64,128,256}/epoch{E}.ckpt.
+  E200/E400 remain future artifacts at408000/816000updates, never early scores.
+  Both running jobs completed the299494742868-byte cache verification/warm scan
+  and exceeded1000finite updates with first-update latest checkpoints present.
