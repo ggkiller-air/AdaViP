@@ -48,7 +48,13 @@ def main() -> None:
     torch.cuda.set_device(rank);device=torch.device('cuda',rank)
     torch.set_num_threads(4)
     assert 'H200' in torch.cuda.get_device_name(rank)
-    dist.init_process_group('nccl')
+    if world==1:
+        # A singleton needs no TCP rendezvous; avoid competing with torchrun's
+        # own store for its ephemeral listening port in this PyTorch version.
+        dist.init_process_group('nccl',init_method=(args.output.resolve()/'singleton_store').as_uri(),
+                                rank=0,world_size=1)
+    else:
+        dist.init_process_group('nccl')
     saved=torch.load(args.checkpoint,map_location='cpu',pickle_module=dill)
     assert saved['contract']['ablation']=='C_teacher_residual'
     policy=hydra.utils.instantiate(OmegaConf.create(saved['cfg']).policy).to(device)

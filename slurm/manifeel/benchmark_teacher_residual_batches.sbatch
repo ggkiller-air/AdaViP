@@ -28,12 +28,20 @@ nvidia-smi topo -m
 taskset -pc $$
 # Same allocation/physical primary GPU for all comparisons. Each case is fresh,
 # bounded, and restores the identical checkpoint. No benchmark weights survive.
-for specification in 1:32 2:64 4:128 1:64 2:128 1:128 4:256; do
+read -r -a batch_cases <<< "${PARALLEL_BATCH_CASES:-1:32 2:64 4:128 1:64 2:128 1:128 4:256}"
+for specification in "${batch_cases[@]}"; do
     devices="${specification%%:*}"
     batch="${specification##*:}"
     output="${PARALLEL_OUTPUT}/gpu${devices}_batch${batch}"
     if [[ -f "${output}/REPORT.json" ]]; then continue; fi
     mkdir -p "${output}"
+    if [[ -f "${output}/exit_code.txt" ]]; then
+        for artifact in stdout.log stderr.log exit_code.txt; do
+            if [[ -f "${output}/${artifact}" ]]; then
+                mv "${output}/${artifact}" "${output}/${artifact}.before_${SLURM_JOB_ID}"
+            fi
+        done
+    fi
     printf 'START devices=%s global_batch=%s\n' "${devices}" "${batch}"
     if timeout --signal=TERM --kill-after=30s 360s \
         srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" --cpu-bind=cores --unbuffered \
