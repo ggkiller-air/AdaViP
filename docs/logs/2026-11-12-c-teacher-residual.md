@@ -32,3 +32,34 @@
   on both; restores transient schedulers afterward. No policy/training/sampling
   implementation or tolerance changed. Raw portable inference likewise checks
   both fresh/fresh and warmed/warmed scheduler states. Failed receipt retained.
+- Final H200 smoke484651 PASS (server13/H200 GPU-c27a2db2-cfc6-ccac-4c30-cc445854d4f8):
+  nine tasks x100 sampling steps exact, both fresh and warmed schedulers. A2/B50/C50
+  real batch32 updates; frozen roles unchanged, all intended active roles changed.
+  Raw/EMA/Adam/scheduler and RNG restore plus next update bitwise exact (maxdiff0).
+  Portable raw and EMA predictions exact. Eight workers pinned inside32allocated
+  CPUs. B234.56samples/s; C70.12includes checkpoint write/state hashing, not a
+  steady-state estimate. Scheduler-fix CPU tests2passed; earlier full426passed/5skipped.
+- Immutable training source17a2b98 (source_v2), Python source fingerprint
+  2b6e0e4fbe1d530a138dfe2ee3e2b4786bd2622dd6c8a7b54ea193db2870848b.
+  Root `/data/wangzihao/experiments/manifeel/c_teacher_residual_b32_ep600_seed42_20261112/`.
+  Full commands, dependency commits, resource snapshots and all receipts in registry.json,
+  source_provenance.json, validation_summary.json and smoke_v2/SMOKE_PASS.json.
+- Formal job484745 RUNNING server13/H200, yangyc/user_wangzihao, gpu,gpux,
+  32CPUs/384GiB, common48h (gpu100h/gpux48h queried), Requeue=1, no dependencies.
+  Output root/C_teacher_residual. Starts fresh, excludes every smoke weight.
+  Verified step80/E1/A,80actual updates; cold-data throughput20.98samples/s.
+  Streaming mapping0.19964s,299494742868bytes background-verified; full scan
+  completion is not yet claimed. No stderr errors at startup audit.
+- First recoverable checkpoint step1 is2512016112bytes, archived outside run at
+  `/data/wangzihao/archives/manifeel_uvip/c_teacher_residual_b32_ep600_seed42_20261112/C_teacher_residual/first_update.ckpt`.
+  Independently loaded it: both raw/EMA U-Nets have Teacher SHA5252d628...778e9f,
+  both w_out weights/biases remain zero, full resume keys present.
+- Pure-CPU publisher484746 runs independently of training (server40,1CPU/4GiB,
+  cpu5day limit with checkpoint-independent requeue). Delivery source52da934.
+  Copies every fixed epoch checkpoint to an external archive before uploading to
+  `ggkiller/UVIP/ManiFeel/ablation/C_teacher_residual/`; filenames/sizes verified
+  via API, SDK transport hashing retained. README/source fingerprints/smoke evidence
+  already published. first_update.ckpt is a wiring check at protocol step1;
+  it is not an E200/E400 result. E200/E400 remain ungenerated at this record.
+- No simulator rollout, changes to existing jobs, B--F retraining, extra shuffle,
+  utility-free control, parameter search or score-driven schedule changes.
