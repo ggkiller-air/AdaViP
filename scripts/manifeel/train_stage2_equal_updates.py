@@ -114,6 +114,13 @@ def main():
     args = parser.parse_args()
     rank, world = int(os.environ['LOCAL_RANK']), int(os.environ['WORLD_SIZE'])
     assert world == (2 if args.batch == 64 else 4)
+    allocated = sorted(os.sched_getaffinity(0))
+    rank_cores = allocated[rank::world]
+    assert len(rank_cores) >= args.workers + 4
+    worker_cores = rank_cores[-args.workers:] if args.workers else []
+    main_cores = rank_cores[:-args.workers] if args.workers else rank_cores
+    os.environ['EQUAL_WORKER_CORES'] = ','.join(str(core) for core in worker_cores)
+    os.sched_setaffinity(0, set(main_cores))
     torch.cuda.set_device(rank)
     assert 'H200' in torch.cuda.get_device_name(rank)
     dist.init_process_group('nccl')
@@ -150,6 +157,8 @@ def main():
     audit.update(residual_initialization_sha256=tensor_fingerprint(policy.state_dict()),
                  teacher_ema_unet_sha256=tensor_fingerprint(teacher.model.state_dict()))
     args.output.mkdir(exist_ok=True, parents=True)
+    (args.output/f'affinity_rank{rank}.json').write_text(json.dumps(dict(
+        main_cores=main_cores, worker_cores=worker_cores, allocated_cores=allocated))+'\n')
     if rank == 0 and args.smoke_phase == 'first':
         from adavip.manifeel.teacher_residual_validation import validate_teacher_parity, validate_residual_routes
         rows = [int(np.flatnonzero(dataset.task_indices == t)[0]) for t in range(9)]

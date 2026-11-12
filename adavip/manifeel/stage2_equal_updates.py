@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 import dill
+import cv2
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -19,7 +20,7 @@ from torch import nn
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, Sampler
 
-from adavip.manifeel.stage2_ablation_workspace import initialize_ablation_worker, tensor_fingerprint
+from adavip.manifeel.stage2_ablation_workspace import tensor_fingerprint
 from scripts.manifeel.train_stage2_t2 import (
     atomic_checkpoint, make_optimizer_scheduler, restore_policy_state,
     set_stage_trainability, update_ema,
@@ -28,6 +29,13 @@ from scripts.manifeel.train_stage2_t2 import (
 REFERENCE_STEPS = 2040
 TOTAL_UPDATES = 1224000
 FIXED_EPOCHS = (1, 6, 10, 20, 50, 100, 200, 300, 400, 500, 600)
+
+
+def initialize_equal_worker(worker_id):
+    """Use disjoint, allocation-derived CPU cores across ranks and loader workers."""
+    torch.set_num_threads(1); cv2.setNumThreads(0)
+    cores = [int(value) for value in os.environ['EQUAL_WORKER_CORES'].split(',')]
+    os.sched_setaffinity(0, {cores[worker_id]})
 
 
 def stage_for_update(completed: int) -> str:
@@ -194,7 +202,7 @@ class EqualUpdateTrainer:
         if self.loader is None:
             options = dict(dataset=self.dataset, batch_sampler=self.sampler,
                 num_workers=self.workers, pin_memory=True,
-                worker_init_fn=initialize_ablation_worker,
+                worker_init_fn=initialize_equal_worker,
                 generator=torch.Generator().manual_seed(700042 + self.rank))
             if self.workers:
                 options.update(multiprocessing_context='spawn', persistent_workers=True, prefetch_factor=2)
