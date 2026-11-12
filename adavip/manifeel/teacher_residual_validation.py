@@ -13,6 +13,7 @@ from scripts.manifeel.train_stage2_t2 import rng_state, restore_rng, set_stage_t
 def validate_teacher_parity(teacher, policy, batch: dict, device: str) -> dict:
     """Compare contexts, noise prediction and every full-sampling output bitwise."""
     saved_rng = rng_state()
+    schedulers = (copy.deepcopy(teacher.noise_scheduler), copy.deepcopy(policy.noise_scheduler))
     try:
         teacher.to(device).eval()
         policy.to(device).eval()
@@ -28,27 +29,41 @@ def validate_teacher_parity(teacher, policy, batch: dict, device: str) -> dict:
         assert torch.equal(expected, encoded["z_t"]), "Teacher context differs"
         assert not bool(encoded["residual"].count_nonzero()), "Nonzero initial residual"
         assert torch.equal(expected, encoded["conditioning"]), "Residual interface differs"
+
+        def sampling_pair():
+            generator = torch.Generator(device=device).manual_seed(20261112)
+            state = generator.get_state()
+            before = teacher.predict_action(batch["obs"], generator=generator)
+            final_state = generator.get_state()
+            generator.set_state(state)
+            after = policy.predict_action(batch["obs"], generator=generator)
+            assert torch.equal(final_state, generator.get_state())
+            for key in before:
+                assert torch.equal(before[key], after[key]), key
+                assert bool(torch.isfinite(after[key]).all())
+
+        # First compare the fresh, portable evaluation state (both schedules on CPU).
+        sampling_pair()
         sample = teacher.prepare_denoising_sample(batch)
-        # Use the exact same noisy trajectory and diffusion timestep.
+        devices_after_teacher_only = [str(m.noise_scheduler.alphas_cumprod.device)
+                                      for m in (teacher, policy)]
+        # diffusers.add_noise mutates alphas_cumprod's device. Match numerical state
+        # by preparing the identical sample on both sides, not by relaxing parity.
+        paired = policy.prepare_denoising_sample(batch, noise=sample.noise, timesteps=sample.timesteps)
+        assert torch.equal(sample.noisy_action, paired.noisy_action)
         a = teacher.model(sample.noisy_action, sample.timesteps, global_cond=expected)
         b = policy.model(sample.noisy_action, sample.timesteps, global_cond=encoded["conditioning"])
         assert torch.equal(a, b), "Denoising prediction differs"
-        generator = torch.Generator(device=device).manual_seed(20261112)
-        state = generator.get_state()
-        before = teacher.predict_action(batch["obs"], generator=generator)
-        final_state = generator.get_state()
-        generator.set_state(state)
-        after = policy.predict_action(batch["obs"], generator=generator)
-        assert torch.equal(final_state, generator.get_state())
-        for key in before:
-            assert torch.equal(before[key], after[key]), key
-            assert bool(torch.isfinite(after[key]).all())
+        sampling_pair()  # Also compare both warmed schedules, as after training.
         return dict(status="PASS", teacher_modules_exact=True, context_exact=True,
                     zero_residual=True, denoising_prediction_exact=True,
                     full_predict_action_exact=True, sampling_rng_exact=True,
+                    fresh_scheduler_sampling_exact=True, warmed_scheduler_sampling_exact=True,
+                    scheduler_devices_after_teacher_only_add_noise=devices_after_teacher_only,
                     batch_size=len(expected), inference_steps=policy.num_inference_steps,
                     deterministic_algorithms=torch.are_deterministic_algorithms_enabled())
     finally:
+        teacher.noise_scheduler, policy.noise_scheduler = schedulers
         restore_rng(saved_rng)
 
 

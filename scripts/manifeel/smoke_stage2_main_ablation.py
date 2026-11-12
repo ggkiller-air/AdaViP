@@ -236,11 +236,25 @@ def run_smoke(policy, dataset, output, contract, cfg, args):
         restored, _, _ = load_evaluation_policy(trainer.output / "checkpoints/latest.ckpt",
                                                 device="cuda:0", weights="raw")
         policy.eval()
+        # The training scheduler was warmed by add_noise; a portable load starts
+        # cold. Compare fresh evaluation at the same scheduler tensor placement.
+        saved_noise_scheduler = policy.noise_scheduler
+        policy.noise_scheduler = copy.deepcopy(restored.noise_scheduler)
         before_raw = policy.predict_action(observations, generator=torch.Generator(device="cuda").manual_seed(17))
         after_raw = restored.predict_action(observations, generator=torch.Generator(device="cuda").manual_seed(17))
         for key in before_raw:
             assert torch.equal(before_raw[key], after_raw[key])
+        policy.noise_scheduler = saved_noise_scheduler
+        with torch.no_grad():
+            warm = policy.prepare_denoising_sample(resume_batch)
+            restored.prepare_denoising_sample(resume_batch, noise=warm.noise, timesteps=warm.timesteps)
+            warm_before = policy.predict_action(observations, generator=torch.Generator(device="cuda").manual_seed(17))
+            warm_after = restored.predict_action(observations, generator=torch.Generator(device="cuda").manual_seed(17))
+        for key in warm_before:
+            assert torch.equal(warm_before[key], warm_after[key])
+        report["portable_raw_warmed_inference"] = True
         report["portable_raw_inference"] = True
+        report["raw_inference_scheduler"] = "fresh config on both sides; add_noise device mutation excluded"
     encoded = policy.encode_stage2(observations)
     if policy.ablation in ("C", "E", "C_teacher_residual"):
         assert torch.equal(encoded["tokens"], encoded["modulated"])

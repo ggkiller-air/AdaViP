@@ -23,3 +23,12 @@
   portable raw/EMA full sampling. Deterministic kernels are smoke-only; formal
   numerical settings remain those of C. No rollout on H200.
 - Verification and submission receipts follow below.
+- CPU regression426passed/5skipped; first focused suite15passed. First H200
+  smoke484586 rejected full-sampling equality after context and denoiser passed.
+  Located test asymmetry in installed diffusers: add_noise moves alphas_cumprod
+  to the action device in-place. The helper called it only on Teacher, comparing
+  CUDA scalar arithmetic against Student's fresh CPU scheduler. Validation now
+  checks full sampling before either add_noise, then after identical add_noise
+  on both; restores transient schedulers afterward. No policy/training/sampling
+  implementation or tolerance changed. Raw portable inference likewise checks
+  both fresh/fresh and warmed/warmed scheduler states. Failed receipt retained.
