@@ -68,3 +68,13 @@
   artifact, not a completed protocol epoch. Strict contract comparison against
   current C passed: every shared field matches except variant/initialization
   audit/source provenance/fingerprint; receipt root/config_equivalence.json.
+- User requested two-H200 acceleration, then also four-H200 queued timing.
+  Prepared isolated same-node DataParallel compute screens, global32 retained
+  (16/card or8/card), global noise/timesteps generated once on primary before
+  scatter. Global per-example/per-dimension loss gathering avoids unequal-tail
+  mean weighting. Bare model/optimizer/EMA remain primary-owned. CPU adapter
+  tests9passed for A/B/C and batch1/2/5, exact loss reduction and RNG accounting.
+  Existing formal484745 remains untouched. Both requests use one frozen source
+  and checkpoint, ABBA single/parallel timing, same Adam/EMA/global clip1.
+  A >=1.15 compute speedup only nominates further full-epoch/resume validation;
+  it does not automatically migrate training or claim end-to-end acceleration.
