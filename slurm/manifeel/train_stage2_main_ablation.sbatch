@@ -19,6 +19,9 @@ cd "${L1S2_SOURCE}"
 source scripts/manifeel/common.sh
 activate_manifeel
 export OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1
+if [[ "${L1S2_CACHE_MODE:-eager}" == "streaming" ]]; then
+    export NUMPY_MADVISE_HUGEPAGE=0
+fi
 export PYTHONDONTWRITEBYTECODE=1
 export TMPDIR="/dev/shm/l1s2_${SLURM_JOB_ID}"
 mkdir -p "${L1S2_OUTPUT}" "${TMPDIR}"
@@ -66,6 +69,7 @@ arguments=(
     --cache /data/wangzihao/cache/manifeel/full_sensor_float32_9task_v1_seed42_20261017
     --cache-config /data/wangzihao/outputs/manifeel/full_sensor_cache_build_20261017_134757/dataset_config.yaml
     --output "${L1S2_OUTPUT}" --workers 8 --cache-workers 8 --ablation "${L1S2_ABLATION}"
+    --cache-mode "${L1S2_CACHE_MODE:-eager}"
 )
 if [[ "${L1S2_MODE}" == "smoke" ]]; then
     arguments+=(--smoke)
@@ -83,6 +87,9 @@ GATE
 fi
 if [[ -f "${L1S2_OUTPUT}/checkpoints/latest.ckpt" ]]; then
     arguments+=(--resume "${L1S2_OUTPUT}/checkpoints/latest.ckpt")
+    if [[ "${L1S2_CACHE_MODE:-eager}" == "streaming" ]]; then
+        arguments+=(--resume-data-transport)
+    fi
 fi
 srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" --cpu-bind=cores --unbuffered \
     bash scripts/manifeel/run_stage2_step.sh "${MANIFEEL_PYTHON}" -u \

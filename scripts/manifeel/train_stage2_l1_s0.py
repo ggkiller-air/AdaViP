@@ -88,6 +88,9 @@ def main() -> None:
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--cache-workers", type=int, default=8)
+    parser.add_argument("--cache-mode", choices=("eager", "streaming"), default="eager")
+    parser.add_argument("--resume-data-transport", action="store_true")
+    parser.add_argument("--stop-after-steps", type=int, default=0)
     parser.add_argument("--check-inputs", action="store_true")
     parser.add_argument("--ablation", choices=("Full", "B", "C", "D", "E", "F"), default="Full")
     parser.add_argument("--smoke", action="store_true")
@@ -169,6 +172,17 @@ def main() -> None:
                         stage_b_updates=10200, stage_c_updates=1211760,
                         global_step_semantics="original Full protocol clock; includes skipped A slots")
     args.output.mkdir(parents=True, exist_ok=True)
+    if args.resume_data_transport:
+        if args.resume is None or args.cache_mode != "streaming":
+            raise ValueError("Transport migration requires streaming mode and an explicit resume")
+        from adavip.manifeel.streaming_cache import preserve_training_contract
+        previous = json.loads((args.output / "contract.json").read_text())
+        actual_source = contract["source_sha256"]
+        contract = preserve_training_contract(contract, previous)
+        with (args.output / "data_transport_migrations.jsonl").open("a") as stream:
+            stream.write(json.dumps({"mode": "streaming", "runtime_source_sha256": actual_source,
+                                     "original_source_sha256": contract["source_sha256"],
+                                     "resume": str(args.resume)}) + "\n")
     (args.output / "inputs_verified.json").write_text(json.dumps(contract, indent=2) + "\n")
     print(json.dumps(dict(event="l1_e50_inputs_verified", windows=len(dataset), cache_bytes=cache["nbytes"])), flush=True)
     if args.check_inputs:
@@ -183,13 +197,20 @@ def main() -> None:
     if args.ablation != "Full":
         from adavip.manifeel.stage2_main_ablation import MainAblationTrainer
         trainer_class = MainAblationTrainer
+    cache_loader = lambda: load_complete_ram_cache(dataset.source, str(args.cache),
+                                                  str(args.cache_config), args.cache_workers)
+    if args.cache_mode == "streaming":
+        from adavip.manifeel.streaming_cache import StreamingCache
+        cache_loader = StreamingCache(dataset.source, str(args.cache), cache, args.output)
     trainer = trainer_class(policy, dataset, args.output, contract, OmegaConf.to_container(cfg, resolve=True),
-                        lambda: load_complete_ram_cache(dataset.source, str(args.cache),
-                                                        str(args.cache_config), args.cache_workers),
-                        workers=args.workers)
+                            cache_loader, workers=args.workers, stop_after_steps=args.stop_after_steps)
     for signum in (signal.SIGUSR1, signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: setattr(trainer, "stop_requested", True))
-    trainer.run(args.resume)
+    try:
+        trainer.run(args.resume)
+    finally:
+        if hasattr(cache_loader, "close"):
+            cache_loader.close()
 
 
 if __name__ == "__main__":

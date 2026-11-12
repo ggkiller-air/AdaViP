@@ -265,8 +265,14 @@ class Stage2AblationTrainer:
             started = time.perf_counter()
             size = self.cache_loader()
             self.cache_ready = True
-            self.log({"event": "all_data_ram_ready", "bytes": size,
-                      "seconds": time.perf_counter() - started}, "runtime.jsonl")
+            if hasattr(size, "check"):
+                self.cache_monitor = size
+                self.log({"event": "mapped_cache_ready", "bytes": size.manifest["nbytes"],
+                          "verification": "background", "seconds": time.perf_counter() - started},
+                         "runtime.jsonl")
+            else:
+                self.log({"event": "all_data_ram_ready", "bytes": size,
+                          "seconds": time.perf_counter() - started}, "runtime.jsonl")
             self.transport_pause = time.perf_counter() - paused
             self.sampler.cursor = self.batch_cursor
         if self.loader is None:
@@ -329,6 +335,8 @@ class Stage2AblationTrainer:
                 torch.cuda.reset_peak_memory_stats(self.device)
             requested = time.perf_counter()
             for batch in self._batches():
+                if hasattr(self, "cache_monitor"):
+                    self.cache_monitor.check()
                 requested += self.transport_pause
                 self.transport_pause = 0.0
                 waited = time.perf_counter() - requested
