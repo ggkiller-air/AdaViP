@@ -119,7 +119,10 @@ def smoke(trainer, phase):
                     restored, _, _ = load_evaluation_policy(out/'checkpoints/latest.ckpt',
                                                             device=str(trainer.device),weights=weights)
                     assert tensor_fingerprint(reference.state_dict()) == tensor_fingerprint(restored.state_dict())
-                    reference.eval()
+                    # Match the evaluator's complete inference state. In this
+                    # runtime, trainable versus frozen attention parameters can
+                    # select numerically different paths even under no_grad.
+                    reference.eval().requires_grad_(False)
                     # Compare both with the portable loader's fresh diffusion scheduler.
                     scheduler = reference.noise_scheduler
                     reference.noise_scheduler = copy.deepcopy(restored.noise_scheduler)
@@ -134,6 +137,7 @@ def smoke(trainer, phase):
             report.update(fresh_process_resume_bitwise=True, raw_ema_adam_scheduler_rng_exact=True,
                           sampler_cursor_task_statistics_exact=True,
                           portable_raw_ema_full_sampling_bitwise=True,
+                          portable_reference_parameters_frozen=True,
                           total_updates=TOTAL_UPDATES, comparison_updates=[408000,816000])
             (out/'SMOKE_PASS.json').write_text(json.dumps(report, indent=2)+'\n')
     dist.barrier()
