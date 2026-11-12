@@ -161,3 +161,50 @@
   does not isolate allreduce duration or prove CPU launch overhead dominates;
   those require a kernel/communication trace. RAM loading cannot explain this
   GPU-resident compute screen. Keep formal source/protocol/job untouched.
+- User expanded scope to larger batches, explicitly selected1,224,000actual
+  optimizer updates with comparisons at408,000/816,000, then requested multiple
+  groups. Retain original B32 job; new comparisons are B64/two GPUs, B128/four,
+  B256/four. No LR scaling, architecture change or shortened cosine schedule.
+- Overload batch screen486234 plus singleton retry486292: seven real-data compute
+  cells passed finite losses, matched-shard gradients and replica equality. B32/1
+  =200.37samples/s,159.70ms/update; B64/1=298.40,214.48ms; B128/1=385.58,331.97ms;
+  B64/2=381.45,167.78ms; B128/2=583.62,219.32ms; B128/4=760.51,168.31ms;
+  B256/4=1125.59,227.44ms. Measured allocated GPU peaks for selected groups are
+  15.91/16.41/26.73GiB. Sourcea08ec7c plus singleton file-store fix32eddc8;
+  first singleton failed TCPStore EADDRINUSE before model creation, receipt kept.
+  Reports root/parallel_bench_20261112/batch_sweep/SUMMARY.json. Pure compute,
+  not convergence evidence or end-to-end timing. Equal updates imply2/4/8times
+  sampled examples and increased GPU-hours; projected compute-only57/57/77hours.
+- New experiment root `/data/wangzihao/experiments/manifeel/c_teacher_residual_equal_updates_20261112`.
+  Added fresh canonical Teacher-residual initialization with strict SHA checks;
+  update-clock A ends2040, B ends12240, C ends1224000. Original2040x600
+  LambdaLR,500-update warmup/encoder ramp, AdamW, global clip and EMA unchanged.
+  Data epochs/cursors are independent of reference_epoch=updates/2040.
+  B64/B128/B256 have1020/510/255updates per data epoch: matching originalE200
+  requires400/800/1600data epochs. Fixed reference checkpoint names retain
+  original publication cadence; metadata explicitly identifies both clocks.
+- DDP keeps global42+data_epoch task-balanced plans, contiguous nonduplicating
+  shards, globally sample-weighted unequal tails49/113/241, independent derived
+  rank CUDA streams42+rank saved/restored with CPU/Python/NumPy RNG. Rebuild DDP
+  at freeze transitions, preserve fixed gradient buckets, exact raw/EMA/Adam/
+  scheduler/cursor/statistics restore. Source-indexed read-only mmap reattaches
+  by filename under spawn workers, with identical file-identity checks across ranks.
+  Disjoint allocated CPU cores for each main rank and its workers. Original B32
+  frozen source and jobs remain untouched. CPU tests13passed, covering complete
+  65265-row sampler plans/resume suffixes and unequal-tail gradient weighting.
+- Initial smoke486490/486491/486492 superseded before meaningful training to fix
+  overlapping rank-worker affinity inherited from single-GPU helper. V2 smoke
+  486546(B128) completed actual A/B/C updates, one complete data epoch including
+  tail113, and fresh-process continuation with bitwise raw/EMA/Adam/scheduler/
+  all-rank RNG/cursor/task-statistics equality. Receipt smoke_b128_v2/SMOKE_PASS.json.
+  Cold-node B64/B256 full-data smokes were stopped after finite short updates:
+  random mmap reads before sequential warming were too slow for bounded debugging.
+  Metadata review also added required encoder_variant=l1/variant fields for the
+  real3090 evaluation loader, plus raw/EMA100-step portable inference checks.
+- Final bounded smoke sourcea4de333(source_v4): A2/B2/C20 real updates, actual
+  final batch and next-epoch samples, then independent-process exact next2updates;
+  all65265 sampler rows remain exhaustively checked on CPU. B128's full-data
+  epoch evidence is retained separately. No tolerance relaxation. Overload jobs
+  486686/486687/486688 validate B64/B128/B256 with512GiB RAM. Formal launcher
+  refuses missing same-batch/world smoke, resume or portable-inference passes.
+  The three formal submissions and publication receipts will be recorded below.
