@@ -54,7 +54,7 @@ def assert_tree_equal(a, b, path='root'):
 
 
 def smoke(trainer, phase):
-    """Check real phase updates, a full data pass, and a fresh-process exact resume."""
+    """Bound real updates, cross an actual unequal tail, and test process resume."""
     out = trainer.output
     if phase == 'first':
         roles = ('obs_encoder', 'model', 'w_out', 'query_projection', 'utility_predictor')
@@ -75,9 +75,20 @@ def smoke(trainer, phase):
         set_protocol_step(trainer, 12240)
         trainer.data_epoch, trainer.cursor = divmod(12240, trainer.steps_per_data_epoch)
         trainer.data_epoch += 1
-        trainer.run(stop_after=trainer.steps_per_data_epoch + 10)
+        trainer.run(stop_after=20)
         after_c = signatures()
         assert all(after_c[n] != after_b[n] for n in roles)
+        # The complete 65,265-index sampler is exhaustively tested on CPU.
+        # Exercise its real final batch and next epoch on GPU without requiring
+        # a cold random read of the entire 299GB cache in every short smoke.
+        tail_step = (trainer.global_step // trainer.steps_per_data_epoch + 1) * trainer.steps_per_data_epoch - 1
+        set_protocol_step(trainer, tail_step)
+        trainer.data_epoch, trainer.cursor = divmod(tail_step, trainer.steps_per_data_epoch)
+        trainer.data_epoch += 1
+        samples_before = trainer.samples_seen
+        trainer.run(stop_after=3)
+        assert trainer.samples_seen - samples_before == len(trainer.dataset) % trainer.batch_size + 2 * trainer.batch_size
+        assert trainer.cursor == 2
         trainer.assert_replicas()
         if trainer.rank == 0:
             os.link(out/'checkpoints/latest.ckpt', out/'resume_seed.ckpt')
@@ -87,7 +98,8 @@ def smoke(trainer, phase):
             os.link(out/'checkpoints/latest.ckpt', out/'expected_next.ckpt')
             (out/'PHASES_PASS.json').write_text(json.dumps(dict(status='PASS',
                 stage_a_utility_only=True, stage_b_encoder_frozen=True,
-                stage_c_all_roles_updated=True, full_data_epoch=True,
+                stage_c_all_roles_updated=True, full_epoch_sampler_checked=True,
+                real_unequal_tail_and_epoch_boundary=True, stage_c_updates_before_resume=23,
                 tail_size=len(trainer.dataset) % trainer.batch_size,
                 batch=trainer.batch_size, world=trainer.world), indent=2)+'\n')
     else:
