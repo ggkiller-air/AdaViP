@@ -63,3 +63,8 @@
   it is not an E200/E400 result. E200/E400 remain ungenerated at this record.
 - No simulator rollout, changes to existing jobs, B--F retraining, extra shuffle,
   utility-free control, parameter search or score-driven schedule changes.
+- Publication confirmed: first_update.ckpt2512016112bytes plus its verification
+  receipt now present remotely. It remains an E1/step1 initialization-interface
+  artifact, not a completed protocol epoch. Strict contract comparison against
+  current C passed: every shared field matches except variant/initialization
+  audit/source provenance/fingerprint; receipt root/config_equivalence.json.
