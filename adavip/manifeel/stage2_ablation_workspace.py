@@ -57,14 +57,18 @@ def parameter_report(policy: Stage2Policy, gradients: bool = False) -> dict:
                                     else encoder.language_head))
     if hasattr(policy, "language_token_projection"):
         modules["action_language_token"] = policy.language_token_projection
+    modules.update({name: getattr(policy, name) for name in
+                    ("z_projection", "utility_projection", "film_hypernets", "query_projection",
+                     "cross_attention", "fusion_norm", "fusion_ff")})
     result = {}
     for name, module in modules.items():
-        parameters = list(module.parameters())
+        parameters = list(module.parameters()) if module is not None else []
         record = {"total": sum(p.numel() for p in parameters),
                   "trainable": sum(p.numel() for p in parameters if p.requires_grad)}
         if gradients:
             active = [p.grad for p in parameters if p.grad is not None]
             record["with_gradient"] = sum(g.numel() for g in active)
+            record["nonzero_gradient_elements"] = sum(int(g.count_nonzero()) for g in active)
             record["gradient_l2"] = (float(torch.stack([g.detach().square().sum() for g in active]).sum().sqrt())
                                      if active else None)
         result[name] = record
@@ -74,6 +78,8 @@ def parameter_report(policy: Stage2Policy, gradients: bool = False) -> dict:
                                         "has_gradient": identity.grad is not None}
     result["total"] = sum(p.numel() for p in policy.parameters())
     result["trainable"] = sum(p.numel() for p in policy.parameters() if p.requires_grad)
+    if gradients:
+        result["with_gradient"] = sum(p.numel() for p in policy.parameters() if p.grad is not None)
     return result
 
 
@@ -82,23 +88,37 @@ def validate_gradient_routes(policy: Stage2Policy, batch: dict) -> dict:
     saved_rng = rng_state()
     report = {}
     try:
-        for stage in ("B", "C"):
+        stages = ("A", "B", "C") if getattr(policy, "ablation", "Full") in ("C", "D", "F") else ("B", "C")
+        for stage in stages:
             set_stage_trainability(policy, stage)
             policy.train()
             policy.zero_grad(set_to_none=True)
             losses = policy.training_losses(batch, stage)
             if not torch.isfinite(losses["action_loss"] + losses["utility_loss"]):
                 raise FloatingPointError("Nonfinite first-batch route check")
-            losses["utility_loss"].backward(retain_graph=True)
-            if not any(p.grad is not None for p in policy.utility_predictor.parameters()):
-                raise RuntimeError("Utility head has no Utility gradient")
-            if any(p.grad is not None for name, p in policy.named_parameters()
-                   if not name.startswith("utility_predictor.")):
-                raise RuntimeError("Utility gradient escaped its head")
+            if policy.utility_predictor is not None:
+                losses["utility_loss"].backward(retain_graph=True)
+                if not any(p.grad is not None for p in policy.utility_predictor.parameters()):
+                    raise RuntimeError("Utility head has no Utility gradient")
+                if any(p.grad is not None for name, p in policy.named_parameters()
+                       if not name.startswith("utility_predictor.")):
+                    raise RuntimeError("Utility gradient escaped its head")
+            elif losses["utility_loss"].requires_grad or losses["u_hat"].numel():
+                raise RuntimeError("Disabled Utility still participates")
+            if stage == "A":
+                report[stage] = parameter_report(policy, gradients=True)
+                continue
             policy.zero_grad(set_to_none=True)
             losses["action_loss"].backward()
-            if any(p.grad is not None for p in policy.utility_predictor.parameters()):
+            if policy.utility_predictor is not None and any(p.grad is not None for p in policy.utility_predictor.parameters()):
                 raise RuntimeError("Action gradient reached Utility head")
+            if any(p.grad is not None for p in policy.parameters() if not p.requires_grad):
+                raise RuntimeError("Frozen parameter received a gradient")
+            for name in ("model", "cross_attention", "language_token_projection", "film_hypernets", "query_projection"):
+                module = getattr(policy, name, None)
+                if module is not None and not any(p.grad is not None and bool(p.grad.count_nonzero())
+                                                  for p in module.parameters()):
+                    raise RuntimeError(f"Active action module has no gradient: {name}")
             if policy.is_dual_encoder and any(p.grad is not None for p in policy.obs_encoder.parameters()):
                 raise RuntimeError("Frozen context branch received gradients")
             encoder = policy.action_encoder if policy.is_dual_encoder else policy.obs_encoder
@@ -332,8 +352,12 @@ class Stage2AblationTrainer:
                 if not torch.isfinite(loss):
                     raise FloatingPointError("Nonfinite Stage 2 loss")
                 loss.backward()
+                if hasattr(self, "observe_before_clip"):
+                    self.observe_before_clip()
                 norm = torch.nn.utils.clip_grad_norm_([p for p in self.policy.parameters() if p.requires_grad],
                                                      1.0, error_if_nonfinite=True)
+                if hasattr(self, "observe_clip"):
+                    self.observe_clip(norm)
                 if self.batch_cursor == 0 or (self.global_step + 1) % 1000 == 0:
                     self.log({"event": "backward", "epoch": self.epoch, "stage": stage,
                               "global_step": self.global_step + 1,

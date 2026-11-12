@@ -115,6 +115,14 @@ class Stage2UtilityDataset(Dataset):
         self.task_specs = source.task_specs
         align_source_to_labels(source, store)
         self.task_indices = np.asarray(store.index["task_index"], dtype=np.int64)
+        self.utility_rows = np.arange(len(store.index), dtype=np.int64)
+
+    def shuffle_utility(self, seed: int, split: str = "train") -> np.ndarray:
+        """Fix whole-vector label permutations within task, without touching other RNGs."""
+        if split != "train":
+            raise ValueError("Utility shuffling is restricted to training")
+        self.utility_rows = task_utility_permutation(self.task_indices, seed)
+        return self.utility_rows.copy()
 
     def __len__(self) -> int:
         return len(self.store.index)
@@ -127,7 +135,7 @@ class Stage2UtilityDataset(Dataset):
                 raise ValueError(f"Window/label alignment failed for {key}")
         if not result["observation_valid_mask"].all() or not result["action_valid_mask"].all():
             raise ValueError("Only complete labeled windows can be trained")
-        result["utility"] = torch.from_numpy(np.asarray(self.store.utility[index], dtype=np.float32).copy())
+        result["utility"] = torch.from_numpy(np.asarray(self.store.utility[self.utility_rows[index]], dtype=np.float32).copy())
         return result
 
     def make_task_balanced_sampler(self, generator: torch.Generator) -> WeightedRandomSampler:
@@ -135,6 +143,17 @@ class Stage2UtilityDataset(Dataset):
         counts = np.bincount(self.task_indices)
         weights = 1.0 / counts[self.task_indices]
         return WeightedRandomSampler(torch.from_numpy(weights), len(self), replacement=True, generator=generator)
+
+
+def task_utility_permutation(task_indices: np.ndarray, seed: int) -> np.ndarray:
+    """Return a reproducible within-task bijection; preserve vector covariance and marginals."""
+    tasks = np.asarray(task_indices)
+    rows = np.arange(len(tasks), dtype=np.int64)
+    rng = np.random.default_rng(seed)
+    for task in np.unique(tasks):
+        selected = np.flatnonzero(tasks == task)
+        rows[selected] = rng.permutation(selected)
+    return rows
 
 
 def make_stage2_dataset(label_dir: str, dataset_root: str, task_embedding_path: str) -> Stage2UtilityDataset:

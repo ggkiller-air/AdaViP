@@ -89,6 +89,8 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--cache-workers", type=int, default=8)
     parser.add_argument("--check-inputs", action="store_true")
+    parser.add_argument("--ablation", choices=("Full", "B", "C", "D", "E", "F"), default="Full")
+    parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
     check_dataloader_ipc()
     cv2.setNumThreads(0)
@@ -101,7 +103,8 @@ def main() -> None:
         raise ValueError("Expected all 65,265 windows and nine tasks")
     if dataset.store.manifest["sha256"] != LABEL_SHA256:
         raise ValueError("Labels are not the completed L1 E50 K64 labels")
-    cache = validate_complete_ram_cache(dataset.source, str(args.cache), str(args.cache_config))
+    cache = validate_complete_ram_cache(dataset.source, str(args.cache), str(args.cache_config),
+                                        require_full_ram=not args.smoke)
     utility = np.asarray(dataset.store.utility, dtype=np.float64)
     rms = np.maximum(np.sqrt(np.square(utility).mean(axis=0)), 1e-6)
     teacher, cfg = load_teacher(args.teacher, args.labels)
@@ -113,6 +116,28 @@ def main() -> None:
     policy.initialize_from_teacher(teacher)
     if tensor_fingerprint(policy.obs_encoder.state_dict()) != tensor_fingerprint(teacher.obs_encoder.state_dict()):
         raise RuntimeError("Inherited L1 encoder differs from the Teacher")
+    args.output.mkdir(parents=True, exist_ok=True)
+    ablation_audit, shuffle = None, None
+    if args.ablation != "Full":
+        from adavip.manifeel.stage2_main_ablation import (
+            FULL_INITIALIZATION_SHA256, PERMUTATION_SEED,
+            audit_pruned_initialization, save_shuffle_manifest)
+        full_state = policy.state_dict()
+        canonical = tensor_fingerprint(full_state)
+        if canonical != FULL_INITIALIZATION_SHA256:
+            raise RuntimeError(f"Cannot reproduce existing Full initialization: {canonical}")
+        saved_rng = torch.get_rng_state().clone()
+        policy.apply_ablation(args.ablation)
+        ablation_audit = audit_pruned_initialization(full_state, policy)
+        ablation_audit.update(canonical_full_sha256=canonical, initialization_seed=42,
+                              training_seed=42, teacher_weights="ema", teacher_epoch=50,
+                              teacher_global_step=55700)
+        assert torch.equal(saved_rng, torch.get_rng_state())
+        del full_state
+        cfg.policy.ablation = args.ablation
+        if args.ablation == "F":
+            shuffle = save_shuffle_manifest(dataset, args.output, PERMUTATION_SEED)
+        (args.output / "initialization_audit.json").write_text(json.dumps(ablation_audit, indent=2) + "\n")
     batch = torch.utils.data.default_collate([dataset[0], dataset[len(dataset) - 1]])
     with torch.no_grad():
         expected = teacher.obs_encoder(teacher.normalizer.normalize(batch["obs"]))
@@ -135,6 +160,14 @@ def main() -> None:
         encoder_lr=8e-5, utility_lr=1e-4, action_lr=1e-4, encoder_start_epoch=7,
         encoder_ramp_updates=500, warmup_updates=500, gradient_clip_norm=1.0, ema_decay=0.9999,
         checkpoint_epochs=[1, 6, 10, 20, 50, 100, 200, 300, 400, 500, 600])
+    if args.ablation != "Full":
+        contract.update(ablation=args.ablation, initialization_audit=ablation_audit,
+                        shuffle=shuffle, teacher_weights="ema", teacher_epoch=50,
+                        teacher_global_step=55700, initialization_seed=42, training_seed=42,
+                        training_windows="all original 65265; no held-out validation",
+                        skipped_a_steps=2040 if args.ablation in ("B", "E") else 0,
+                        stage_b_updates=10200, stage_c_updates=1211760,
+                        global_step_semantics="original Full protocol clock; includes skipped A slots")
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "inputs_verified.json").write_text(json.dumps(contract, indent=2) + "\n")
     print(json.dumps(dict(event="l1_e50_inputs_verified", windows=len(dataset), cache_bytes=cache["nbytes"])), flush=True)
@@ -142,7 +175,15 @@ def main() -> None:
         return
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1 or "H200" not in torch.cuda.get_device_name(0):
         raise RuntimeError("Formal training requires exactly one allocated H200")
-    trainer = L1Trainer(policy, dataset, args.output, contract, OmegaConf.to_container(cfg, resolve=True),
+    if args.smoke:
+        from scripts.manifeel.smoke_stage2_main_ablation import run_smoke
+        run_smoke(policy, dataset, args.output, contract, OmegaConf.to_container(cfg, resolve=True), args)
+        return
+    trainer_class = L1Trainer
+    if args.ablation != "Full":
+        from adavip.manifeel.stage2_main_ablation import MainAblationTrainer
+        trainer_class = MainAblationTrainer
+    trainer = trainer_class(policy, dataset, args.output, contract, OmegaConf.to_container(cfg, resolve=True),
                         lambda: load_complete_ram_cache(dataset.source, str(args.cache),
                                                         str(args.cache_config), args.cache_workers),
                         workers=args.workers)

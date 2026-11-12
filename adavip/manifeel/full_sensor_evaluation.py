@@ -62,6 +62,10 @@ def load_evaluation_policy(
             if variant != "stage2_transformer":
                 raise ValueError("L1 Student requires the S0 Transformer head")
             cfg.policy._target_ = "adavip.manifeel.stage2_l1_policy.Stage2L1Policy"
+            ablation = payload["contract"].get("ablation", "Full")
+            if cfg.policy.get("ablation", ablation) != ablation:
+                raise ValueError("Checkpoint ablation disagrees with architecture")
+            cfg.policy.ablation = ablation
         strategy = payload["contract"].get("encoder_strategy", "s0")
         if variant == "stage2_transformer" and strategy != "s0":
             if cfg.policy.get("encoder_strategy", strategy) != strategy:

@@ -49,8 +49,10 @@ def set_stage_trainability(policy: Stage2Policy, stage: str) -> None:
     for module in (policy.z_projection, policy.utility_projection, policy.film_hypernets,
                    policy.query_projection, policy.cross_attention, policy.fusion_norm,
                    policy.fusion_ff, policy.model):
-        module.requires_grad_(stage != "A")
-    policy.utility_predictor.requires_grad_(True)
+        if module is not None:
+            module.requires_grad_(stage != "A")
+    if policy.utility_predictor is not None:
+        policy.utility_predictor.requires_grad_(True)
     policy.normalizer.requires_grad_(False)
 
 
@@ -61,7 +63,7 @@ def make_optimizer_scheduler(policy: Stage2Policy, steps_per_epoch: int,
     encoder = list(policy.obs_encoder.parameters())
     if policy.action_encoder is not None:
         encoder += list(policy.action_encoder.parameters())
-    utility = list(policy.utility_predictor.parameters())
+    utility = list(policy.utility_predictor.parameters()) if policy.utility_predictor is not None else []
     taken = {id(item) for item in encoder + utility}
     action = [item for name, item in policy.named_parameters()
               if id(item) not in taken and not name.startswith("normalizer.") and name != "_dummy_variable"]

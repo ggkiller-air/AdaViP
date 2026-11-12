@@ -123,7 +123,7 @@ class ConditionalUnet1D(nn.Module):
     def forward(self, sample: Tensor, timestep: Tensor | int, global_cond: Tensor) -> Tensor:
         if not torch.is_tensor(timestep):
             timestep = torch.tensor([timestep], device=sample.device, dtype=torch.long)
-        timesteps = timestep.reshape(-1).expand(sample.shape[0])
+        timesteps = timestep.to(device=sample.device).reshape(-1).expand(sample.shape[0])
         conditioning = torch.cat((self.diffusion_step_encoder(timesteps), global_cond), dim=-1)
         features = sample.transpose(1, 2)
         skips = []
