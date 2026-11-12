@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -96,9 +97,31 @@ def smoke(trainer, phase):
             expected = torch.load(out/'expected_next.ckpt', map_location='cpu', pickle_module=dill)
             actual = torch.load(out/'checkpoints/latest.ckpt', map_location='cpu', pickle_module=dill)
             assert_tree_equal(expected, actual)
+            del expected, actual
+            from adavip.manifeel.full_sensor_evaluation import load_evaluation_policy
+            rows = [int(np.flatnonzero(trainer.dataset.task_indices == task)[0]) for task in range(9)]
+            batch = torch.utils.data.default_collate([trainer.dataset[i] for i in rows])
+            observations = {key:value.to(trainer.device) for key,value in batch['obs'].items()}
+            with torch.no_grad():
+                for weights, reference in [('raw',trainer.policy),('ema',trainer.ema)]:
+                    restored, _, _ = load_evaluation_policy(out/'checkpoints/latest.ckpt',
+                                                            device=str(trainer.device),weights=weights)
+                    assert tensor_fingerprint(reference.state_dict()) == tensor_fingerprint(restored.state_dict())
+                    reference.eval()
+                    # Compare both with the portable loader's fresh diffusion scheduler.
+                    scheduler = reference.noise_scheduler
+                    reference.noise_scheduler = copy.deepcopy(restored.noise_scheduler)
+                    before = reference.predict_action(observations,
+                        generator=torch.Generator(device=trainer.device).manual_seed(20261112))
+                    after = restored.predict_action(observations,
+                        generator=torch.Generator(device=trainer.device).manual_seed(20261112))
+                    assert_tree_equal(before, after)
+                    reference.noise_scheduler = scheduler
+                    del restored
             report = json.loads((out/'PHASES_PASS.json').read_text())
             report.update(fresh_process_resume_bitwise=True, raw_ema_adam_scheduler_rng_exact=True,
                           sampler_cursor_task_statistics_exact=True,
+                          portable_raw_ema_full_sampling_bitwise=True,
                           total_updates=TOTAL_UPDATES, comparison_updates=[408000,816000])
             (out/'SMOKE_PASS.json').write_text(json.dumps(report, indent=2)+'\n')
     dist.barrier()
@@ -188,6 +211,7 @@ def main():
         for path in sorted((root/directory).glob('*.py')):
             digest.update(str(path.relative_to(root)).encode()); digest.update(path.read_bytes())
     contract = dict(ablation='C_teacher_residual', experiment='equal_optimizer_updates',
+        variant='stage2_transformer', encoder_variant='l1', encoder_strategy='s0',
         batch_size=args.batch, world_size=world, seed=42, rank_cuda_seed='42+rank',
         total_updates=TOTAL_UPDATES, reference_steps_per_epoch=REFERENCE_STEPS,
         stage_a_updates=2040, stage_b_updates=10200, stage_c_updates=1211760,
@@ -195,6 +219,7 @@ def main():
         teacher_sha256=TEACHER_SHA256, labels_sha256=LABEL_SHA256, cache_contract=manifest['contract'],
         cache_bytes=manifest['nbytes'], cache_file_identity=cache_signatures[0],
         task_embedding_sha256=dataset.source.manifest['task_embedding_sha256'],
+        task_ids=[spec.task_id for spec in dataset.task_specs],
         normalizer=normalizer_fingerprint(policy.normalizer), initialization=audit,
         encoder_lr=8e-5, utility_lr=1e-4, action_lr=1e-4, gradient_clip_norm=1.0,
         utility_weight=.05, ema_decay=.9999, warmup_updates=500, encoder_ramp_updates=500,

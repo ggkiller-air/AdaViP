@@ -6,7 +6,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=160G
+#SBATCH --mem=512G
 #SBATCH --time=00:45:00
 set -euo pipefail
 : "${EQUAL_SOURCE:?frozen source}"

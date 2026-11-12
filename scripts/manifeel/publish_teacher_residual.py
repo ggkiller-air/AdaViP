@@ -23,7 +23,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--prefix", default=PREFIX,
+                        help="Unique remote experiment prefix; defaults to the original B32 run")
     args = parser.parse_args()
+    prefix = args.prefix.rstrip('/')
+    if not prefix.startswith('ManiFeel/ablation/') or '..' in prefix.split('/'):
+        raise ValueError('Unexpected publication prefix')
     root = args.root.resolve()
     run = root / "C_teacher_residual"
     work = root / "publication"
@@ -59,7 +64,7 @@ def main() -> None:
             source = Path(registry["source"])
             api = HubApi()
             remote = {f.path: f.size for f in api.list_repo_files(REPO, "model", revision="master")
-                      if not f.is_dir and f.path.startswith(PREFIX + "/")}
+                      if not f.is_dir and f.path.startswith(prefix + "/")}
             files = [(work / "README.md", "README.md"),
                      (source / "source.sha256", "source.sha256"),
                      (source / "source_provenance.json", "source_provenance.json"),
@@ -73,7 +78,7 @@ def main() -> None:
                     break
                 if not path.is_file():
                     continue
-                destination = PREFIX + "/" + name
+                destination = prefix + "/" + name
                 size = path.stat().st_size
                 if destination in remote:
                     if remote[destination] != size:
@@ -96,12 +101,12 @@ def main() -> None:
                 assert confirmed[destination] == size
                 remote[destination] = size
                 emit("upload_verified", path=destination, bytes=size)
-            receipt = dict(repo=REPO, prefix=PREFIX, files=remote,
+            receipt = dict(repo=REPO, prefix=prefix, files=remote,
                            checked_at=datetime.datetime.now().astimezone().isoformat())
             tmp = work / "published.json.partial"
             tmp.write_text(json.dumps(receipt, indent=2) + "\n")
             os.replace(tmp, work / "published.json")
-            if (run / "COMPLETE.json").exists() and all(PREFIX + f"/epoch{e}.ckpt" in remote for e in EPOCHS):
+            if (run / "COMPLETE.json").exists() and all(prefix + f"/epoch{e}.ckpt" in remote for e in EPOCHS):
                 (work / "COMPLETE.json").write_text(json.dumps(receipt, indent=2) + "\n")
                 return
             if args.once:

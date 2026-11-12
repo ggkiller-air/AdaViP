@@ -12,9 +12,13 @@
 set -euo pipefail
 : "${RESIDUAL_PUBLISH_SOURCE:?publisher code directory}"
 : "${RESIDUAL_RUN_ROOT:?experiment root}"
+extra_arguments=()
+if [[ -n "${RESIDUAL_PUBLISH_PREFIX:-}" ]]; then
+    extra_arguments+=(--prefix "${RESIDUAL_PUBLISH_PREFIX}")
+fi
 /public/home/wangzihao/.local/miniforge3/bin/python -u \
     "${RESIDUAL_PUBLISH_SOURCE}/scripts/manifeel/publish_teacher_residual.py" \
-    --root "${RESIDUAL_RUN_ROOT}" &
+    --root "${RESIDUAL_RUN_ROOT}" "${extra_arguments[@]}" &
 child=$!
 trap 'kill -USR1 "${child}" 2>/dev/null || true' USR1 TERM
 while true; do
