@@ -116,3 +116,31 @@
   snapshots on each benchmark reset; regression verifies saved steps/moments remain
   unchanged. Formal trainer reloads fresh checkpoints and is unaffected. Failed
   receipts retained; no throughput acceptance or production migration from them.
+- Corrected overload DDP screens485957(two)/485958(four) both completed, with
+  updated replicas bitwise equal. Matched-shard gradient relative L2 is6.74e-9
+  and4.46e-8. Global batch32, frozen step10200 checkpoint, ABBA timing50updates
+  after10warmups per block, including global clip/AdamW/EMA, excluding data load
+  and checkpoint I/O. Two: baseline200.23 vs DDP200.59samples/s (1.00179x).
+  Four: baseline203.85 vs DDP204.77samples/s (1.00446x). Neither passes1.15x
+  nomination threshold; keep formal single-GPU and do not expand experiments.
+  Reports: root/parallel_bench_20261112/ddp{2,4}_v2/REPORT.json.
+- Optimizer snapshot regression plus adapter checks:10passed in28.99seconds
+  on overload CPU485955. Production source remains17a2b98; review/benchmark
+  fixes are committed separately at8df8192 and do not alter the ongoing run.
+- Formal snapshot at2026-11-12 22:36CST: E13,24680optimizer updates, stageC,
+  finite task losses; completed E7--12 throughput197--204samples/s. At this
+  rate E200 is roughly17--19hours away, E40035--38hours, E60053--57hours,
+  excluding requeue delay and3090 rollouts. Existing signal/safe-stop/full-resume
+  requeue path handles the48h allocation boundary. No early-score schedule change.
+- Independent full-cache audit completed: overload CPU485955/485956 exited0
+  in8m41s/4m04s. First31arrays from interrupted scan plus32resumable hash
+  receipts cover all63arrays/299494742868bytes. Finalizer logged
+  FULL_CACHE_AUDIT_PASS; independently rechecked every receipt SHA against
+  manifest and all current dev/inode/size/mtime identities, all pass.
+  Output root/parallel_bench_20261112/cache_audit/PASS.json with853window
+  parity, normalization/sampling/memory evidence. No current cache corruption,
+  index drift or duplicate normalization was detected. Raw-vs-cache comparisons
+  sample853windows spanning all400episodes; hash checks cover all cached bytes,
+  and index joins cover all65265label rows. Geometry guard regression passed;
+  guard addresses a latent invalid-cache acceptance path, not a demonstrated
+  problem in current training data. No production restart is needed.
