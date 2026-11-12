@@ -1,4 +1,4 @@
-"""Same-node persistent DDP compute screen at unchanged global batch32."""
+"""Same-node persistent DDP compute screen; default global batch32 is unchanged."""
 
 from __future__ import annotations
 
@@ -34,9 +34,17 @@ def main() -> None:
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--profile-parts', action='store_true',
                         help='Record CUDA timeline and host submission intervals without per-phase synchronization')
+    parser.add_argument('--global-batch', type=int, default=32)
+    parser.add_argument('--standalone-rate', action='store_true',
+                        help='Measure only the requested device count; compare receipts externally')
+    parser.add_argument('--timed-steps', type=int, default=50)
+    parser.add_argument('--warmup-steps', type=int, default=10)
     args=parser.parse_args();args.output.mkdir(exist_ok=True,parents=True)
     rank=int(os.environ['LOCAL_RANK']);world=int(os.environ['WORLD_SIZE'])
-    assert world in (2,4) and int(os.environ['LOCAL_WORLD_SIZE'])==world
+    assert world in (1,2,4) and int(os.environ['LOCAL_WORLD_SIZE'])==world
+    size=args.global_batch
+    assert size>0 and size%world==0 and args.timed_steps>0 and args.warmup_steps>0
+    assert world>1 or args.standalone_rate
     torch.cuda.set_device(rank);device=torch.device('cuda',rank)
     torch.set_num_threads(4)
     assert 'H200' in torch.cuda.get_device_name(rank)
@@ -58,10 +66,10 @@ def main() -> None:
         values=np.load(cache/item['filename'],mmap_mode='r',allow_pickle=False)
         groups[int(item['task_index'])]['data'][item['key']]=SourceIndexedArray(values,np.arange(len(values)),len(values))
     dataset.source.groups=groups
-    indices=[int(np.flatnonzero(dataset.task_indices==i%9)[i//9]) for i in range(32)]
+    indices=[int(np.flatnonzero(dataset.task_indices==i%9)[i//9]) for i in range(size)]
     batch=torch.utils.data.default_collate([dataset[i] for i in indices])
     batch={k:({n:t.to(device) for n,t in v.items()} if k=='obs' else v.to(device)) for k,v in batch.items()}
-    part=slice(rank*(32//world),(rank+1)*(32//world))
+    part=slice(rank*(size//world),(rank+1)*(size//world))
 
     def sliced(interval):
         return {k:({n:t[interval] for n,t in v.items()} if k=='obs' else v[interval]) for k,v in batch.items()}
@@ -76,15 +84,16 @@ def main() -> None:
     reset_rng();sample=policy.prepare_denoising_sample(batch)
     if rank==0:
         policy.zero_grad(set_to_none=True)
-        a_parts,u_parts=[],[]
-        for first in range(0,32,32//world):
-            interval=slice(first,first+32//world)
+        for first in range(0,size,size//world):
+            interval=slice(first,first+size//world)
             tensors=tuple(getattr(sample,f.name)[interval] for f in fields(sample))
-            a,u=local(sliced(interval),'C',tensors);a_parts.append(a);u_parts.append(u)
-        serial=torch.cat(a_parts).mean()+.05*torch.cat(u_parts).mean()
-        serial.backward()
+            a,u=local(sliced(interval),'C',tensors)
+            # Accumulate one shard at a time, avoiding a full-global-batch graph
+            # on rank0 during the large-batch correctness gate.
+            serial=(a.mean()+.05*u.mean())/world
+            serial.backward()
         expected={n:p.grad.detach().cpu().clone() for n,p in policy.named_parameters() if p.grad is not None}
-        del a_parts,u_parts,serial
+        del serial
     dist.barrier()
     policy.zero_grad(set_to_none=True)
     tensors=tuple(getattr(sample,f.name)[part] for f in fields(sample))
@@ -102,7 +111,7 @@ def main() -> None:
             delta_sq+=float(difference.square().sum());ref_sq+=float(x.double().square().sum())
             maximum=max(maximum,float(difference.abs().max()) if difference.numel() else 0.0)
         correctness=dict(matched_shard_gradient_relative_l2=(delta_sq/max(ref_sq,1e-30))**.5,
-                         matched_shard_gradient_max_abs=maximum,global_batch=32,devices=world,
+                         matched_shard_gradient_max_abs=maximum,global_batch=size,devices=world,
                          same_global_noise_and_timesteps=True)
         (args.output/'correctness.json').write_text(json.dumps(correctness,indent=2)+'\n')
         correct=correctness['matched_shard_gradient_relative_l2']<1e-4
@@ -117,7 +126,8 @@ def main() -> None:
         event=torch.cuda.Event(enable_timing=True)
         event.record()
         return event,time.perf_counter()
-    for mode in ('single','ddp','ddp','single'):
+    modes=(('single' if world==1 else 'ddp'),)*2 if args.standalone_rate else ('single','ddp','ddp','single')
+    for mode in modes:
         dist.barrier()
         restore_policy_state(policy,saved['model'],device)
         set_stage_trainability(policy,'C');policy.train();reset_rng()
@@ -128,10 +138,11 @@ def main() -> None:
             set_protocol_step(holder,max(12740,saved['global_step']))
             ema=copy.deepcopy(policy).eval().requires_grad_(False)
             intervals=[]
-            for step in range(60):
-                if step==10:
+            torch.cuda.reset_peak_memory_stats()
+            for step in range(args.warmup_steps+args.timed_steps):
+                if step==args.warmup_steps:
                     torch.cuda.synchronize();started=time.perf_counter()
-                points=[mark()] if args.profile_parts and step>=10 else None
+                points=[mark()] if args.profile_parts and step>=args.warmup_steps else None
                 optimizer.zero_grad(set_to_none=True)
                 if points is not None:points.append(mark())
                 if mode=='single':
@@ -154,6 +165,8 @@ def main() -> None:
                 if points is not None:
                     points.append(mark());intervals.append(points)
             torch.cuda.synchronize();elapsed=time.perf_counter()-started
+            peak_allocated=torch.cuda.max_memory_allocated()
+            peak_reserved=torch.cuda.max_memory_reserved()
             if intervals:
                 names=('zero_grad','forward_and_loss','backward_including_ddp_sync','global_clip','optimizer_scheduler','ema')
                 profiles.append(dict(mode=mode,rank=rank,steps=len(intervals),
@@ -162,10 +175,14 @@ def main() -> None:
                     host_submission_ms={name:sum((p[i+1][1]-p[i][1])*1000 for p in intervals)/len(intervals)
                                         for i,name in enumerate(names)}))
             del optimizer,scheduler,ema
-        else:elapsed=0.0
+        else:elapsed=0.0;peak_allocated=peak_reserved=0
         elapsed_tensor=torch.tensor(elapsed,device=device);dist.all_reduce(elapsed_tensor,op=dist.ReduceOp.MAX)
+        memory_tensor=torch.tensor([peak_allocated,peak_reserved],device=device,dtype=torch.int64)
+        dist.all_reduce(memory_tensor,op=dist.ReduceOp.MAX)
         if rank==0:
-            row=dict(mode=mode,updates=50,seconds=float(elapsed_tensor),samples_per_second=1600/float(elapsed_tensor))
+            row=dict(mode=mode,updates=args.timed_steps,seconds=float(elapsed_tensor),
+                     samples_per_second=size*args.timed_steps/float(elapsed_tensor),
+                     peak_allocated_bytes=int(memory_tensor[0]),peak_reserved_bytes=int(memory_tensor[1]))
             rates.append(row);print(json.dumps(row),flush=True)
         if mode=='ddp':
             signature=tensor_fingerprint(policy.state_dict());signatures=[None]*world
@@ -180,9 +197,10 @@ def main() -> None:
     if rank==0:
         single=sum(r['seconds'] for r in rates if r['mode']=='single')
         parallel=sum(r['seconds'] for r in rates if r['mode']=='ddp')
+        speedup=single/parallel if single and parallel else None
         report=dict(status='COMPUTE_SCREEN_COMPLETE',implementation='DDP',devices=world,
-            global_batch=32,per_device_batch=32//world,rates=rates,compute_speedup=single/parallel,
-            worth_full_validation=single/parallel>=1.15,correctness=correctness,
+            global_batch=size,per_device_batch=size//world,rates=rates,compute_speedup=speedup,
+            worth_full_validation=speedup>=1.15 if speedup is not None else None,correctness=correctness,
             updated_replicas_bitwise_equal=True,production_untouched=True,
             includes_data_loading=False,requires_full_epoch_and_resume_gate_before_migration=True)
         (args.output/'REPORT.json').write_text(json.dumps(report,indent=2)+'\n')
