@@ -144,3 +144,20 @@
   and index joins cover all65265label rows. Geometry guard regression passed;
   guard addresses a latent invalid-cache acceptance path, not a demonstrated
   problem in current training data. No production restart is needed.
+- Follow-up to scaling question: overload two-H200 profile486147 completed0
+  in1m45s onserver13 GPUs5/6, initially idle, NVLink-connected. Source53cd2ae,
+  root/parallel_bench_20261112/source_profile; reports ddp2_profile/profile_rank*.json.
+  Adds CUDA event phase boundaries without per-phase synchronization; host launch
+  intervals recorded separately. CUDA intervals include idle/launch gaps and are
+  not pure kernel time or an isolated NCCL measurement. Inputs already reside
+  on GPU; data loading/checkpoint I/O excluded. Same global32, checkpoint, RNG,
+  loss and optimizer; matched-shard gradient6.69e-9, updated replicas exact.
+- Across ABBA blocks rank0 mean CUDA phase ms single vs2DDP: forward/loss40.12
+  vs37.88; backward+global clip84.07 vs86.26; AdamW/scheduler+EMA33.57 vs35.12.
+  Wall step159.49 vs159.97ms, compute speedup0.99697x (no material change).
+  Model313872456parameters,313872336trainable, FP32 trainable bytes1255489344.
+  This establishes poor batch-size scaling of forward and unchanged full-model
+  update costs, with backward/synchronization failing to provide savings. It
+  does not isolate allreduce duration or prove CPU launch overhead dominates;
+  those require a kernel/communication trace. RAM loading cannot explain this
+  GPU-resident compute screen. Keep formal source/protocol/job untouched.
