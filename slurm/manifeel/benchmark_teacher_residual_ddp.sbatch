@@ -27,7 +27,11 @@ nvidia-smi --query-gpu=index,name,uuid,memory.total,memory.free,memory.used,util
 nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv
 nvidia-smi topo -m
 taskset -pc $$
+profile_arguments=()
+if [[ "${PARALLEL_PROFILE_PARTS:-0}" == 1 ]]; then
+    profile_arguments+=(--profile-parts)
+fi
 srun --ntasks=1 --cpus-per-task="${SLURM_CPUS_PER_TASK}" --cpu-bind=cores --unbuffered \
     "${MANIFEEL_PYTHON}" -u -m torch.distributed.run --standalone --nnodes=1 --nproc-per-node="${PARALLEL_GPUS}" \
     -m scripts.manifeel.benchmark_teacher_residual_ddp \
-    --checkpoint "${PARALLEL_CHECKPOINT}" --output "${PARALLEL_OUTPUT}"
+    --checkpoint "${PARALLEL_CHECKPOINT}" --output "${PARALLEL_OUTPUT}" "${profile_arguments[@]}"

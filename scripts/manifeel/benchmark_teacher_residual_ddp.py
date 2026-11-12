@@ -32,6 +32,8 @@ def main() -> None:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--checkpoint',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--profile-parts', action='store_true',
+                        help='Record CUDA timeline and host submission intervals without per-phase synchronization')
     args=parser.parse_args();args.output.mkdir(exist_ok=True,parents=True)
     rank=int(os.environ['LOCAL_RANK']);world=int(os.environ['WORLD_SIZE'])
     assert world in (2,4) and int(os.environ['LOCAL_WORLD_SIZE'])==world
@@ -110,6 +112,11 @@ def main() -> None:
     del sample,a,u,tensors
     policy.zero_grad(set_to_none=True)
     rates=[]
+    profiles=[]
+    def mark():
+        event=torch.cuda.Event(enable_timing=True)
+        event.record()
+        return event,time.perf_counter()
     for mode in ('single','ddp','ddp','single'):
         dist.barrier()
         restore_policy_state(policy,saved['model'],device)
@@ -120,10 +127,13 @@ def main() -> None:
             holder=type('Clock',(),{})();holder.optimizer=optimizer;holder.scheduler=scheduler
             set_protocol_step(holder,max(12740,saved['global_step']))
             ema=copy.deepcopy(policy).eval().requires_grad_(False)
+            intervals=[]
             for step in range(60):
                 if step==10:
                     torch.cuda.synchronize();started=time.perf_counter()
+                points=[mark()] if args.profile_parts and step>=10 else None
                 optimizer.zero_grad(set_to_none=True)
+                if points is not None:points.append(mark())
                 if mode=='single':
                     result=policy.training_losses(batch,'C')
                     loss=result['action_loss']+.05*result['utility_loss']
@@ -133,10 +143,24 @@ def main() -> None:
                     a,u=ddp(sliced(part),'C',tensors)
                     loss=a.mean()+.05*u.mean()
                 assert torch.isfinite(loss)
+                if points is not None:points.append(mark())
                 loss.backward()
+                if points is not None:points.append(mark())
                 torch.nn.utils.clip_grad_norm_([p for p in policy.parameters() if p.requires_grad],1.0,error_if_nonfinite=True)
-                optimizer.step();scheduler.step();update_ema(ema,policy,.9999)
+                if points is not None:points.append(mark())
+                optimizer.step();scheduler.step()
+                if points is not None:points.append(mark())
+                update_ema(ema,policy,.9999)
+                if points is not None:
+                    points.append(mark());intervals.append(points)
             torch.cuda.synchronize();elapsed=time.perf_counter()-started
+            if intervals:
+                names=('zero_grad','forward_and_loss','backward_including_ddp_sync','global_clip','optimizer_scheduler','ema')
+                profiles.append(dict(mode=mode,rank=rank,steps=len(intervals),
+                    cuda_timeline_ms={name:sum(p[i][0].elapsed_time(p[i+1][0]) for p in intervals)/len(intervals)
+                                      for i,name in enumerate(names)},
+                    host_submission_ms={name:sum((p[i+1][1]-p[i][1])*1000 for p in intervals)/len(intervals)
+                                        for i,name in enumerate(names)}))
             del optimizer,scheduler,ema
         else:elapsed=0.0
         elapsed_tensor=torch.tensor(elapsed,device=device);dist.all_reduce(elapsed_tensor,op=dist.ReduceOp.MAX)
@@ -147,6 +171,12 @@ def main() -> None:
             signature=tensor_fingerprint(policy.state_dict());signatures=[None]*world
             dist.all_gather_object(signatures,signature)
             assert len(set(signatures))==1,'DDP model replicas diverged'
+    if args.profile_parts:
+        (args.output/f'profile_rank{rank}.json').write_text(json.dumps(dict(
+            profiles=profiles,parameters=sum(p.numel() for p in policy.parameters()),
+            trainable_parameters=sum(p.numel() for p in policy.parameters() if p.requires_grad),
+            trainable_bytes=sum(p.numel()*p.element_size() for p in policy.parameters() if p.requires_grad),
+            caveat='CUDA event intervals include GPU idle/host launch gaps; not kernel-only time. No per-phase synchronize.'),indent=2)+'\n')
     if rank==0:
         single=sum(r['seconds'] for r in rates if r['mode']=='single')
         parallel=sum(r['seconds'] for r in rates if r['mode']=='ddp')
