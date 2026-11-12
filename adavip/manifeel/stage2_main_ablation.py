@@ -21,6 +21,9 @@ def audit_pruned_initialization(full_state: dict, policy) -> dict:
     """Compare every surviving tensor, allowing only B's documented input-column slice."""
     counts = {}
     for name, value in policy.state_dict().items():
+        if name.startswith("w_out.") and policy.ablation == "C_teacher_residual":
+            assert not bool(value.count_nonzero())
+            continue
         expected = full_state[name]
         if policy.ablation == "B" and name.startswith("film_hypernets.") and name.endswith("network.0.weight"):
             expected = expected[:, :64]

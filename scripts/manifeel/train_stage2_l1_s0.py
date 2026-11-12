@@ -92,7 +92,7 @@ def main() -> None:
     parser.add_argument("--resume-data-transport", action="store_true")
     parser.add_argument("--stop-after-steps", type=int, default=0)
     parser.add_argument("--check-inputs", action="store_true")
-    parser.add_argument("--ablation", choices=("Full", "B", "C", "D", "E", "F"), default="Full")
+    parser.add_argument("--ablation", choices=("Full", "B", "C", "D", "E", "F", "C_teacher_residual"), default="Full")
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
     check_dataloader_ipc()
@@ -138,14 +138,33 @@ def main() -> None:
         assert torch.equal(saved_rng, torch.get_rng_state())
         del full_state
         cfg.policy.ablation = args.ablation
+        if args.ablation == "C_teacher_residual":
+            ablation_audit["common_c_before_teacher_unet_sha256"] = tensor_fingerprint(
+                {k: v for k, v in policy.state_dict().items() if not k.startswith("w_out.")})
+            if ablation_audit["common_c_before_teacher_unet_sha256"] != "21db0ba749cc21041909ec85f68de14bae63f7693063b72eb03929a22b4fbf03":
+                raise RuntimeError("Cannot reproduce original C initialization")
+            policy.initialize_from_teacher(teacher)
+            ablation_audit["teacher_ema_unet_sha256"] = tensor_fingerprint(teacher.model.state_dict())
+            assert ablation_audit["teacher_ema_unet_sha256"] == tensor_fingerprint(policy.model.state_dict())
+            ablation_audit["residual_initialization_sha256"] = tensor_fingerprint(policy.state_dict())
+            assert torch.equal(saved_rng, torch.get_rng_state())
         if args.ablation == "F":
             shuffle = save_shuffle_manifest(dataset, args.output, PERMUTATION_SEED)
         (args.output / "initialization_audit.json").write_text(json.dumps(ablation_audit, indent=2) + "\n")
-    batch = torch.utils.data.default_collate([dataset[0], dataset[len(dataset) - 1]])
+    indices = ([int(np.flatnonzero(dataset.task_indices == task)[0]) for task in range(9)]
+               if args.smoke and args.ablation == "C_teacher_residual" else [0, len(dataset) - 1])
+    batch = torch.utils.data.default_collate([dataset[index] for index in indices])
     with torch.no_grad():
         expected = teacher.obs_encoder(teacher.normalizer.normalize(batch["obs"]))
         actual = policy.encode_stage2(batch["obs"])["z_t"]
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    if args.smoke and args.ablation == "C_teacher_residual":
+        from adavip.manifeel.teacher_residual_validation import validate_teacher_parity
+        torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.benchmark = False
+        parity = validate_teacher_parity(teacher, policy, batch, device="cuda:0")
+        (args.output / "teacher_parity.json").write_text(json.dumps(parity, indent=2) + "\n")
+        policy.cpu()
     del teacher
     root = Path(__file__).resolve().parents[2]
     source_digest = hashlib.sha256()
@@ -171,6 +190,10 @@ def main() -> None:
                         skipped_a_steps=2040 if args.ablation in ("B", "E") else 0,
                         stage_b_updates=10200, stage_c_updates=1211760,
                         global_step_semantics="original Full protocol clock; includes skipped A slots")
+    if args.ablation == "C_teacher_residual":
+        provenance = root / "source_provenance.json"
+        if provenance.exists():
+            contract["source_provenance"] = json.loads(provenance.read_text())
     args.output.mkdir(parents=True, exist_ok=True)
     if args.resume_data_transport:
         if args.resume is None or args.cache_mode != "streaming":

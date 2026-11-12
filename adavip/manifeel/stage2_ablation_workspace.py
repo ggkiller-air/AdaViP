@@ -60,6 +60,8 @@ def parameter_report(policy: Stage2Policy, gradients: bool = False) -> dict:
     modules.update({name: getattr(policy, name) for name in
                     ("z_projection", "utility_projection", "film_hypernets", "query_projection",
                      "cross_attention", "fusion_norm", "fusion_ff")})
+    if hasattr(policy, "w_out"):
+        modules["w_out"] = policy.w_out
     result = {}
     for name, module in modules.items():
         parameters = list(module.parameters()) if module is not None else []
@@ -85,6 +87,9 @@ def parameter_report(policy: Stage2Policy, gradients: bool = False) -> dict:
 
 def validate_gradient_routes(policy: Stage2Policy, batch: dict) -> dict:
     """Check B/C backward on the first raw batch, preserving weights and all RNG."""
+    if getattr(policy, "ablation", None) == "C_teacher_residual":
+        from adavip.manifeel.teacher_residual_validation import validate_residual_routes
+        return validate_residual_routes(policy, batch)
     saved_rng = rng_state()
     report = {}
     try:

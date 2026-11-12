@@ -66,6 +66,8 @@ def assert_rng_equal(first, second):
 def run_smoke(policy, dataset, output, contract, cfg, args):
     """Run 100 B/C updates plus A checks; only emit PASS after exact recovery/inference."""
     output = Path(output)
+    exact = policy.ablation == "C_teacher_residual"
+    tolerance = dict(rtol=0, atol=0) if exact else dict(rtol=1e-6, atol=1e-8)
     report = {"ablation": policy.ablation, "device": torch.cuda.get_device_name(0),
               "trainer_pid": os.getpid(), "trainer_cores": sorted(os.sched_getaffinity(0)),
               "batch_size": 32, "workers": args.workers, "phases": {}}
@@ -126,6 +128,10 @@ def run_smoke(policy, dataset, output, contract, cfg, args):
         trainer.epoch, trainer.batch_cursor = epoch, 0
         set_protocol_step(trainer, step)
         trainer.stats = trainer._new_stats()
+        before_roles = {name: tensor_fingerprint(module.state_dict()) for name, module in
+                        (("unet", policy.model), ("utility", policy.utility_predictor),
+                         ("attention", policy.cross_attention), ("query", policy.query_projection),
+                         ("w_out", getattr(policy, "w_out", None))) if module is not None}
         before_frozen = tensor_fingerprint({name: p for name, p in policy.named_parameters() if not p.requires_grad})
         torch.cuda.synchronize()
         started, data_seconds = time.perf_counter(), 0.0
@@ -150,7 +156,14 @@ def run_smoke(policy, dataset, output, contract, cfg, args):
             assert teacher_encoder == tensor_fingerprint(policy.obs_encoder.state_dict())
         else:
             assert teacher_encoder != tensor_fingerprint(policy.obs_encoder.state_dict())
-        report["phases"][stage] = dict(updates=updates, seconds=elapsed,
+        changed_roles = {name: before_roles[name] != tensor_fingerprint(module.state_dict())
+                         for name, module in (("unet", policy.model), ("utility", policy.utility_predictor),
+                         ("attention", policy.cross_attention), ("query", policy.query_projection),
+                         ("w_out", getattr(policy, "w_out", None))) if module is not None}
+        if exact:
+            assert changed_roles["utility"]
+            assert all(changed == (stage != "A") for name, changed in changed_roles.items() if name != "utility")
+        report["phases"][stage] = dict(changed_roles=changed_roles, updates=updates, seconds=elapsed,
                                        samples_per_second=updates * 32 / elapsed,
                                        data_wait_seconds=data_seconds, frozen_exact=True,
                                        parameters=parameter_report(policy, gradients=True),
@@ -189,7 +202,7 @@ def run_smoke(policy, dataset, output, contract, cfg, args):
     comparisons["cuda_rng_exact"] = all(torch.equal(a, b) for a, b in zip(expected_rng["cuda"], actual_rng["cuda"]))
     comparisons["fingerprints"] = {key: expected[key] == actual[key] for key in expected}
     comparisons["checkpoint_state_exact"] = True
-    comparisons["native_step_tolerance"] = {"rtol": 1e-6, "atol": 1e-8}
+    comparisons["native_step_tolerance"] = tolerance
     (output / "resume_diagnostic.json").write_text(json.dumps(comparisons, indent=2) + "\n")
     assert expected["scheduler"] == actual["scheduler"]
     assert_rng_equal(expected_rng, actual_rng)
@@ -197,16 +210,18 @@ def run_smoke(policy, dataset, output, contract, cfg, args):
     # protocol; require exact restoration and tightly bounded native-step rounding.
     for role, state in (("model", policy.state_dict()), ("ema", trainer.ema.state_dict())):
         for name, value in state.items():
-            torch.testing.assert_close(expected_tensors[role][name], value.detach().cpu(), rtol=1e-6, atol=1e-8)
+            torch.testing.assert_close(expected_tensors[role][name], value.detach().cpu(), **tolerance)
     optimizer_differences = []
     for index, state in trainer.optimizer.state_dict()["state"].items():
         for name, value in state.items():
             reference = expected_tensors["optimizer"]["state"][index][name]
-            torch.testing.assert_close(reference, value, rtol=1e-6, atol=1e-8)
+            torch.testing.assert_close(reference, value, **tolerance)
             if torch.is_tensor(value) and not torch.equal(reference, value):
                 optimizer_differences.append(float((reference-value).abs().max()))
     comparisons["optimizer_max_abs_difference"] = max(optimizer_differences, default=0.0)
     (output / "resume_diagnostic.json").write_text(json.dumps(comparisons, indent=2) + "\n")
+    if exact:
+        assert all(comparisons["fingerprints"].values()), "Deterministic resume differs"
     trainer.save()
     restored, _, _ = load_evaluation_policy(trainer.output / "checkpoints/latest.ckpt", device="cuda:0")
     observations = {key: value[:1] for key, value in resume_batch["obs"].items()}
@@ -215,11 +230,28 @@ def run_smoke(policy, dataset, output, contract, cfg, args):
         after = restored.predict_action(observations, generator=torch.Generator(device="cuda").manual_seed(17))
     torch.testing.assert_close(before["action"], after["action"], rtol=0, atol=0)
     assert torch.isfinite(after["action"]).all()
+    if exact:
+        assert torch.equal(before["action_pred"], after["action_pred"])
+        del restored
+        restored, _, _ = load_evaluation_policy(trainer.output / "checkpoints/latest.ckpt",
+                                                device="cuda:0", weights="raw")
+        policy.eval()
+        before_raw = policy.predict_action(observations, generator=torch.Generator(device="cuda").manual_seed(17))
+        after_raw = restored.predict_action(observations, generator=torch.Generator(device="cuda").manual_seed(17))
+        for key in before_raw:
+            assert torch.equal(before_raw[key], after_raw[key])
+        report["portable_raw_inference"] = True
     encoded = policy.encode_stage2(observations)
-    if policy.ablation in ("C", "E"):
+    if policy.ablation in ("C", "E", "C_teacher_residual"):
         assert torch.equal(encoded["tokens"], encoded["modulated"])
     if policy.ablation in ("B", "D", "E"):
         assert torch.equal(encoded["query"], encoded["z_t"])
+    if exact:
+        import hashlib
+        report["source_sha256"] = contract["source_sha256"]
+        report["source_manifest_sha256"] = hashlib.sha256(Path("source.sha256").read_bytes()).hexdigest()
+        report["teacher_parity"] = json.loads((output / "teacher_parity.json").read_text())
+        report["deterministic_resume_bitwise"] = True
     report.update(exact_checkpoint_state_and_rng_restore=True, native_next_step_fp32_close=True,
                   native_next_step_bitwise_equal=comparisons["fingerprints"],
                   native_next_step_max_abs={role: max([r["max_abs"] for r in comparisons[role]], default=0.0)

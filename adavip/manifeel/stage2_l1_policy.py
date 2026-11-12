@@ -24,7 +24,7 @@ class Stage2L1Policy(Stage2Policy):
 
     def apply_ablation(self, ablation: str) -> None:
         """Prune a canonical Full initialization without consuming random numbers."""
-        if ablation not in ("Full", "B", "C", "D", "E", "F"):
+        if ablation not in ("Full", "B", "C", "D", "E", "F", "C_teacher_residual"):
             raise ValueError(f"Unknown main ablation: {ablation}")
         if self.ablation != "Full":
             raise ValueError("Ablations must be derived from the canonical Full initialization")
@@ -33,10 +33,10 @@ class Stage2L1Policy(Stage2Policy):
             self.utility_predictor = None
         if ablation in ("B", "D", "E"):
             self.query_projection = None
-        if ablation in ("C", "E"):
+        if ablation in ("C", "E", "C_teacher_residual"):
             self.film_hypernets = None
             self.z_projection = None
-        if ablation in ("B", "C", "E"):
+        if ablation in ("B", "C", "E", "C_teacher_residual"):
             self.utility_projection = None
         if ablation == "B":
             # Full uses [z64, u64]. Keep exactly its z columns and bias;
@@ -46,9 +46,24 @@ class Stage2L1Policy(Stage2Policy):
                 linear.weight = nn.Parameter(linear.weight[:, :64].detach().clone())
                 linear.in_features = 64
 
+        if ablation == "C_teacher_residual":
+            # nn.Linear's default reset must not shift canonical C/training RNG.
+            with torch.random.fork_rng(devices=[]):
+                self.w_out = nn.Linear(256, 256)
+            nn.init.zeros_(self.w_out.weight)
+            nn.init.zeros_(self.w_out.bias)
+
+    def initialize_from_teacher(self, teacher) -> None:
+        """Residual C also strictly inherits the Teacher EMA action backbone."""
+        super().initialize_from_teacher(teacher)
+        if self.ablation == "C_teacher_residual":
+            self.model.load_state_dict(teacher.model.state_dict(), strict=True)
+
     def configure_encoders(self, stage: str) -> None:
         """Keep S0's A/B freeze and C unfreeze, including the new action token."""
         super().configure_encoders(stage)
+        if hasattr(self, "w_out"):
+            self.w_out.requires_grad_(stage != "A")
         if hasattr(self, "language_token_projection"):
             self.language_token_projection.requires_grad_(stage != "A")
 
@@ -78,7 +93,11 @@ class Stage2L1Policy(Stage2Policy):
         attended, _ = self.cross_attention(query[:, None], modulated, modulated, need_weights=False)
         fused = self.fusion_norm(attended[:, 0])
         conditioning = self.fusion_norm(fused + self.fusion_ff(fused))
-        return dict(z_t=context_state, pre_language_z=state, tokens=tokens,
+        residual = None
+        if self.ablation == "C_teacher_residual":
+            residual = self.w_out(conditioning)
+            conditioning = context_state + residual  # No normalization after addition.
+        return dict(residual=residual, z_t=context_state, pre_language_z=state, tokens=tokens,
                     u_hat=utility, conditioning=conditioning, modulated=modulated, query=query)
 
     def training_losses(self, batch, stage, denoising_sample=None):
