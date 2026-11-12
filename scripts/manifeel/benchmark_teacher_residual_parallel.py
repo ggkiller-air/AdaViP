@@ -17,7 +17,7 @@ from omegaconf import OmegaConf
 
 from adavip.manifeel.decoded_sensor_cache import SourceIndexedArray
 from adavip.manifeel.stage2_data import make_stage2_dataset, validate_complete_ram_cache
-from adavip.manifeel.stage2_parallel import MultiDeviceLosses, Stage2LossModule
+from adavip.manifeel.stage2_parallel import restore_optimizer_snapshot, MultiDeviceLosses, Stage2LossModule
 from scripts.manifeel.train_stage2_t2 import (make_optimizer_scheduler, set_stage_trainability,
                                             update_ema, restore_policy_state, rng_state, restore_rng)
 
@@ -130,7 +130,7 @@ def main() -> None:
         restore_policy_state(policy, saved['model'], torch.device('cuda:0'))
         set_stage_trainability(policy,'C');policy.train()
         optimizer,scheduler=make_optimizer_scheduler(policy,2040,600)
-        optimizer.load_state_dict(saved['optimizer']);scheduler.load_state_dict(saved['scheduler'])
+        restore_optimizer_snapshot(optimizer,saved['optimizer']);scheduler.load_state_dict(saved['scheduler'])
         # Compare fully unfrozen Stage C even if the captured checkpoint is from B.
         from adavip.manifeel.stage2_main_ablation import set_protocol_step
         holder=type('Clock',(),{})();holder.optimizer=optimizer;holder.scheduler=scheduler

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import fields
 
 import torch
@@ -44,3 +45,8 @@ class MultiDeviceLosses:
         action, utility = self.parallel(batch, stage, tensors)
         return dict(action_loss=action.mean(), utility_loss=utility.mean(),
                     action_loss_per_sample=action, utility_loss_per_sample=utility.mean(dim=-1))
+
+
+def restore_optimizer_snapshot(optimizer, snapshot: dict) -> None:
+    """Protect CPU Adam step tensors from aliasing a reused benchmark snapshot."""
+    optimizer.load_state_dict(copy.deepcopy(snapshot))

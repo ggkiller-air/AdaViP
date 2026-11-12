@@ -20,7 +20,7 @@ from omegaconf import OmegaConf
 
 from adavip.manifeel.decoded_sensor_cache import SourceIndexedArray
 from adavip.manifeel.stage2_data import make_stage2_dataset, validate_complete_ram_cache
-from adavip.manifeel.stage2_parallel import Stage2LossModule
+from adavip.manifeel.stage2_parallel import restore_optimizer_snapshot, Stage2LossModule
 from adavip.manifeel.stage2_main_ablation import set_protocol_step
 from adavip.manifeel.stage2_ablation_workspace import tensor_fingerprint
 from scripts.manifeel.train_stage2_t2 import (make_optimizer_scheduler, set_stage_trainability,
@@ -116,7 +116,7 @@ def main() -> None:
         set_stage_trainability(policy,'C');policy.train();reset_rng()
         if mode=='ddp' or rank==0:
             optimizer,scheduler=make_optimizer_scheduler(policy,2040,600)
-            optimizer.load_state_dict(saved['optimizer']);scheduler.load_state_dict(saved['scheduler'])
+            restore_optimizer_snapshot(optimizer,saved['optimizer']);scheduler.load_state_dict(saved['scheduler'])
             holder=type('Clock',(),{})();holder.optimizer=optimizer;holder.scheduler=scheduler
             set_protocol_step(holder,max(12740,saved['global_step']))
             ema=copy.deepcopy(policy).eval().requires_grad_(False)

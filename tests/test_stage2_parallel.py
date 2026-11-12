@@ -24,3 +24,19 @@ def test_loss_adapter_keeps_global_reduction_and_rng(stage, count):
     assert torch.equal(expected_rng,torch.get_rng_state())
     for key in ('action_loss','utility_loss','action_loss_per_sample','utility_loss_per_sample'):
         torch.testing.assert_close(actual[key],expected[key],rtol=0,atol=0)
+
+
+def test_benchmark_optimizer_reset_does_not_mutate_cpu_step_snapshot():
+    import copy
+    from adavip.manifeel.stage2_parallel import restore_optimizer_snapshot
+    p=torch.nn.Parameter(torch.ones(2))
+    optimizer=torch.optim.AdamW([p],lr=.01)
+    p.sum().backward();optimizer.step();optimizer.zero_grad()
+    saved=copy.deepcopy(optimizer.state_dict())
+    before=copy.deepcopy(saved)
+    restore_optimizer_snapshot(optimizer,saved)
+    p.sum().backward();optimizer.step()
+    for key,value in before['state'][0].items():
+        assert torch.equal(value,saved['state'][0][key]),key
+    assert optimizer.state[p]['step']==2
+    assert saved['state'][0]['step']==1

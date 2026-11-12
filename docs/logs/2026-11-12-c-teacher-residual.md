@@ -98,3 +98,21 @@
   Zarr and mmap at every episode's first/last complete window plus task-stratified
   random windows, normalized values, global sampling/resume suffixes, worker PSS,
   and independently hashes the complete cache. Jobs use overload.
+- Overload CPU485669:15tests passed;853raw-vs-mapped windows across400episodes
+  bitwise exact for all fields and normalized observations/actions. All65265label
+  indices and epoch1/2/7/200/400/600 sampler/resume suffixes pass; tail17 retained.
+  Worker PSS_Anon~113MiB each, mapped-file pages~3.5GiB each in this subset audit,
+  no299GB anonymous per-worker copies. Current cache geometry passes hardened checks.
+- DataParallel485667/485668:matched-shard gradient relative L2~7.97e-9/3.37e-8,
+  isolating earlier difference to full-batch vs shard-size arithmetic. Compute
+  screen rates single~201/204,2GPU~89,4GPU~67samples/s; no production promotion.
+- CPU485669 later received SIGTERM after31arrays/135151175040bytes; no hash mismatch
+  or OOM message. Original production full63-array hash pass remains valid.
+  Retain completed prefix and finish remaining arrays in bounded overload shards.
+- Added persistent DDP screens485838/485839. Both matched-shard gradients passed,
+  but rank-state equality rejected after first timed block. Located benchmark-only
+  reset alias: AdamW.load_state_dict can retain CPU step tensor references, so the
+  rank0-only single baseline mutated its reusable CPU snapshot. Deep-copy optimizer
+  snapshots on each benchmark reset; regression verifies saved steps/moments remain
+  unchanged. Formal trainer reloads fresh checkpoints and is unaffected. Failed
+  receipts retained; no throughput acceptance or production migration from them.
