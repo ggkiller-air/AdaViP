@@ -16,8 +16,8 @@ import torch
 from omegaconf import OmegaConf
 
 from adavip.manifeel.decoded_sensor_cache import SourceIndexedArray
-from adavip.manifeel.stage2_data import make_stage2_dataset
-from adavip.manifeel.stage2_parallel import MultiDeviceLosses
+from adavip.manifeel.stage2_data import make_stage2_dataset, validate_complete_ram_cache
+from adavip.manifeel.stage2_parallel import MultiDeviceLosses, Stage2LossModule
 from scripts.manifeel.train_stage2_t2 import (make_optimizer_scheduler, set_stage_trainability,
                                             update_ema, restore_policy_state, rng_state, restore_rng)
 
@@ -50,7 +50,9 @@ def main() -> None:
         '/data/wangzihao/datasets/manifeel',
         '/data/wangzihao/outputs/manifeel/task_embeddings/clip_vit_b32_9task.npz')
     cache = Path('/data/wangzihao/cache/manifeel/full_sensor_float32_9task_v1_seed42_20261017')
-    manifest = json.loads((cache / 'manifest.json').read_text())
+    manifest = validate_complete_ram_cache(dataset.source, str(cache),
+        '/data/wangzihao/outputs/manifeel/full_sensor_cache_build_20261017_134757/dataset_config.yaml',
+        require_full_ram=False)
     groups = [{"data": {}} for _ in dataset.task_specs]
     for item in manifest['arrays']:
         values = np.load(cache / item['filename'], mmap_mode='r', allow_pickle=False)
@@ -88,8 +90,38 @@ def main() -> None:
                        action_loss_single=float(reference['action_loss']),action_loss_parallel=float(actual['action_loss']),
                        utility_loss_single=float(reference['utility_loss']),utility_loss_parallel=float(actual['utility_loss']))
     (args.output/'correctness.json').write_text(json.dumps(correctness,indent=2)+'\n')
-    assert correctness['gradient_relative_l2'] < 1e-4, correctness
-    del gradients, reference, actual, sample
+    # Localize batch-shape arithmetic separately from the device adapter. Match
+    # each shard's batch shape on one GPU and compare with the parallel reduction.
+    parallel_gradients = {n: p.grad.detach().cpu().clone() for n,p in policy.named_parameters() if p.grad is not None}
+    del gradients
+    policy.zero_grad(set_to_none=True)
+    from dataclasses import fields
+    local = Stage2LossModule(policy)
+    actions, utilities = [], []
+    offset = 0
+    for chunk in torch.arange(len(batch['action'])).chunk(args.devices):
+        part = slice(offset, offset + len(chunk)); offset += len(chunk)
+        sub = {k: ({n:t[part] for n,t in v.items()} if k=='obs' else v[part]) for k,v in batch.items()}
+        tensors = tuple(getattr(sample,f.name)[part] for f in fields(sample))
+        a,u = local(sub,'C',tensors);actions.append(a);utilities.append(u)
+    serial_loss = torch.cat(actions).mean() + .05*torch.cat(utilities).mean()
+    serial_loss.backward()
+    delta_sq = ref_sq = 0.0
+    maximum = 0.0
+    for name,p in policy.named_parameters():
+        assert (p.grad is not None) == (name in parallel_gradients), name
+        if p.grad is None: continue
+        a,b = p.grad.detach().cpu(),parallel_gradients[name]
+        diff = (a-b).double()
+        delta_sq += float(diff.square().sum());ref_sq += float(a.double().square().sum())
+        maximum=max(maximum,float(diff.abs().max()) if diff.numel() else 0.0)
+    correctness['matched_shard_gradient_relative_l2']=(delta_sq/max(ref_sq,1e-30))**.5
+    correctness['matched_shard_gradient_max_abs']=maximum
+    correctness['full_batch_vs_split_bitwise_equivalence_claimed']=False
+    (args.output/'correctness.json').write_text(json.dumps(correctness,indent=2)+'\n')
+    assert correctness['matched_shard_gradient_relative_l2'] < 1e-4, correctness
+    del parallel_gradients, reference, actual, sample, actions, utilities, serial_loss
+
     policy.zero_grad(set_to_none=True)
     rates = []
     # ABBA order reduces first-run autotune and temporal-load bias. Include Adam,

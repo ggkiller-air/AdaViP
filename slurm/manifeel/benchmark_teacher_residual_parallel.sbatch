@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --partition=gpu,gpux
-#SBATCH --account=yangyc
-#SBATCH --qos=user_wangzihao
+#SBATCH --account=overload
+#SBATCH --qos=overload
 #SBATCH --gres=gpu:NVIDIAH200:2
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

@@ -52,6 +52,8 @@ def validate_complete_ram_cache(source: Stage2SourceDataset, directory: str,
     original_source = hydra.utils.instantiate(frozen_config)
     if fingerprint(cache_contract(original_source)) != manifest["contract"]:
         raise ValueError("Decoded cache does not match its original source contract")
+    if len(original_source.manifest["stores"]) != len(source.manifest["stores"]):
+        raise ValueError("Decoded cache task count differs")
     for original, labeled in zip(original_source.manifest["stores"], source.manifest["stores"]):
         for key in ("path", "arrays", "episode_ends"):
             if original[key] != labeled[key]:
@@ -66,8 +68,18 @@ def validate_complete_ram_cache(source: Stage2SourceDataset, directory: str,
     allocated = os.environ.get("SLURM_MEM_PER_NODE")
     if require_full_ram and allocated and required > int(allocated) * 1024 ** 2:
         raise MemoryError("H200 job memory is too small for complete cache plus 32 GiB headroom")
+    if sum(int(item["nbytes"]) for item in records) != int(manifest["nbytes"]):
+        raise ValueError("Decoded cache total bytes differ")
     for record in records:
+        task, key = int(record["task_index"]), record["key"]
+        if (record["filename"] != f"task{task}_{key}.npy"
+                or record.get("contract") != manifest["contract"] or record.get("dtype") != "float32"):
+            raise ValueError("Decoded cache array identity differs")
         mapped = np.load(root / record["filename"], mmap_mode="r", allow_pickle=False)
+        expected_tail = (tuple(source.shape_meta["obs"][key]["shape"])[1:] + (3,)
+                         if key in IMAGE_KEYS else tuple(source.manifest["stores"][task]["arrays"][key]["shape"][1:]))
+        if tuple(mapped.shape[1:]) != expected_tail or not mapped.flags.c_contiguous:
+            raise ValueError(f"Decoded cache geometry differs from labels: {record['filename']}")
         if (mapped.dtype != np.float32 or list(mapped.shape) != record["shape"]
                 or len(mapped) != int(source.episode_ends[int(record["task_index"])][-1])
                 or mapped.nbytes != record["nbytes"]):

@@ -78,3 +78,23 @@
   and checkpoint, ABBA single/parallel timing, same Adam/EMA/global clip1.
   A >=1.15 compute speedup only nominates further full-epoch/resume validation;
   it does not automatically migrate training or claim end-to-end acceleration.
+- User scheduling preference: all debugging/smoke/throughput/cache audits use
+  overload/overload; only required-result long training avoids overload. Recorded
+  in /public/home/wangzihao/AGENTS.md. Formal484745 stays yangyc/user_wangzihao.
+- Initial normal-account screens485455(two)/485456(four) both stopped before
+  timing on single-batch32 vs split-batch gradient relative-L2 gate1e-4:
+  2.3274e-4 and4.7724e-4 respectively; max absolute3.9954e-6/7.4004e-6.
+  Production untouched. Add a matched-shard serial single-GPU diagnostic to
+  distinguish batch-shape arithmetic from replica/scatter/reduction errors;
+  retain1e-4 gate for that comparison, record original differences explicitly.
+- Data review: production scanner completed all63arrays/299494742868bytes in
+  1014.35seconds. Code joins every complete label to task/episode/timestep/source
+  index, preserves masks and Teacher normalization; mapped arrays are read-only.
+  Found missing upfront geometry check: unlike verified eager path, streaming
+  fallback could resize a differently sized cache again. Harden validator to
+  reject image geometry, record identity/contract, total-byte and task-count
+  mismatches. Live frozen source is unchanged; audit verifies whether current
+  artifacts trigger any of these guards. New bounded CPU audit compares original
+  Zarr and mmap at every episode's first/last complete window plus task-stratified
+  random windows, normalized values, global sampling/resume suffixes, worker PSS,
+  and independently hashes the complete cache. Jobs use overload.

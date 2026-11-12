@@ -71,3 +71,26 @@ def test_transport_contract_rejects_scientific_change():
     assert preserve_training_contract({**old, 'source_sha256': 'new'}, old) == old
     with pytest.raises(ValueError, match='beyond data transport'):
         preserve_training_contract({**old, 'batch_size': 8}, old)
+
+
+@pytest.mark.parametrize('corruption', ['geometry', 'identity', 'total_bytes'])
+def test_cache_metadata_rejects_silent_resize_or_wrong_identity(dataset_arguments, tmp_path, corruption):
+    import json
+    from omegaconf import OmegaConf
+    from adavip.manifeel.stage2_data import validate_complete_ram_cache
+    source = Stage2SourceDataset(**dataset_arguments)
+    cache = tmp_path / 'cache'
+    manifest = build_decoded_cache(source, str(cache), workers=2)
+    config = tmp_path / 'cache.yaml'
+    OmegaConf.save(OmegaConf.create({'dataset': {'_target_':
+        'adavip.manifeel.stage2_data.Stage2SourceDataset', **dataset_arguments}}), config)
+    validate_complete_ram_cache(source, str(cache), str(config), require_full_ram=False)
+    if corruption == 'geometry':
+        source.shape_meta['obs']['front']['shape'][1] = 4
+    elif corruption == 'identity':
+        manifest['arrays'][0]['contract'] = 'wrong'
+    else:
+        manifest['nbytes'] += 1
+    (cache / 'manifest.json').write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match='geometry|identity|total bytes'):
+        validate_complete_ram_cache(source, str(cache), str(config), require_full_ram=False)
